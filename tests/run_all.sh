@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # The whole suite. The Python and JS tests need nothing beyond ComfyUI's own deps;
-# the E2E tests need playwright (cleanly skipped when it is missing).
+# the E2E tests need playwright, and are skipped when it is missing.
+#
+# A skipped test is NOT a passing test. Pass --strict (what CI should do) to make
+# any skip fail the run, so a missing dependency can never read as a green suite.
 set -u
+strict=0
+[ "${1:-}" = "--strict" ] && strict=1
 cd "$(dirname "$0")/.."
 pass=0; fail=0; skip=0
 
@@ -32,4 +37,8 @@ fi
 
 echo
 echo "$pass passed, $fail failed, $skip skipped"
+if [ "$skip" -gt 0 ]; then
+  echo "  ! $skip test(s) never ran — this suite did NOT cover them."
+  [ "$strict" -eq 1 ] && exit 1
+fi
 [ "$fail" -eq 0 ]

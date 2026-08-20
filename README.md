@@ -118,7 +118,7 @@ re-dock. Position and docked state persist across sessions.
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/KoLt-Real/Comfy_ModelFetcher.git
+git clone https://github.com/KoLt-Real/ComfyUI-ModelFetcher.git
 ```
 
 Restart ComfyUI. That's it — **no dependencies to install** (it only uses `requests` and
@@ -130,7 +130,7 @@ Requires ComfyUI with the current frontend (subgraph support) and Python 3.10+.
 To update:
 
 ```bash
-cd ComfyUI/custom_nodes/Comfy_ModelFetcher && git pull
+cd ComfyUI/custom_nodes/ComfyUI-ModelFetcher && git pull
 ```
 
 This package registers **no nodes** — it only adds the button and its HTTP routes. If anything

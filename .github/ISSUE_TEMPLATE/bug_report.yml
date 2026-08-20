@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in Model Fetcher does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Model Fetcher reads workflow notes and writes files into your models folder,
+        so the two things that matter most are **the note it read** and **the log line
+        it printed**. Please paste both — it usually turns three round-trips into one.
+  - type: input
+    id: version
+    attributes:
+      label: ComfyUI version
+      description: Bottom of the ComfyUI settings dialog, or `git -C ComfyUI describe --tags`.
+    validations: {required: true}
+  - type: input
+    id: platform
+    attributes:
+      label: OS and install type
+      placeholder: Windows 11 portable / Linux venv / macOS / Docker
+    validations: {required: true}
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+    validations: {required: true}
+  - type: textarea
+    id: note
+    attributes:
+      label: The workflow note involved
+      description: The Markdown note whose models were being fetched or relinked. Redact any token.
+      render: markdown
+  - type: textarea
+    id: log
+    attributes:
+      label: ComfyUI console output
+      description: The lines around the failure. Model Fetcher prefixes its own with `[ModelFetcher]`.
+      render: shell
+  - type: checkboxes
+    id: token
+    attributes:
+      label: Before posting
+      options:
+        - label: I checked that no HuggingFace token or private URL is left in what I pasted.
+          required: true
