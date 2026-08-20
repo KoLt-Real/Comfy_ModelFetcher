@@ -1,0 +1,550 @@
+/* ComfyFactory Model Fetcher — bouton topbar + popup */
+
+/* ---- Bouton topbar ---- */
+.cf-mf-topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  margin: 0 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--input-text, #e6e6e6);
+  background: var(--comfy-input-bg, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  position: relative;
+}
+.cf-mf-topbar-btn:hover {
+  background: var(--comfy-menu-bg, rgba(255, 255, 255, 0.12));
+  border-color: #6c8cff;
+}
+.cf-mf-topbar-btn:active { transform: translateY(1px); }
+.cf-mf-btn-icon { display: inline-flex; color: #7aa2ff; }
+.cf-mf-btn-label { line-height: 1; }
+.cf-mf-btn-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px var(--comfy-menu-bg, #1e1e2e);
+}
+/* L'attribut `hidden` doit l'emporter sur le `display:inline-flex` ci-dessus. */
+.cf-mf-btn-badge[hidden] { display: none !important; }
+
+/* Floating button (detached from the top bar) and drag/dock visual feedback. */
+.cf-mf-topbar-btn.cf-mf-floating {
+  position: fixed;
+  margin: 0;
+  cursor: grab;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.cf-mf-topbar-btn.cf-mf-dragging {
+  cursor: grabbing;
+  opacity: 0.92;
+  border-color: #7aa2ff;
+}
+.cf-mf-topbar-btn.cf-mf-will-dock {
+  outline: 2px dashed #7aa2ff;
+  outline-offset: 2px;
+}
+
+/* ---- Overlay ---- */
+.cf-mf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10010; /* au-dessus du bouton flottant (10001) : le popup doit tout recouvrir */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.cf-mf-card {
+  width: min(780px, 94vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--comfy-menu-bg, #1c1c24);
+  color: var(--input-text, #e6e6e6);
+  border: 1px solid var(--border-color, #33333f);
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  animation: cf-mf-pop 0.16s ease-out;
+}
+@keyframes cf-mf-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---- Header ---- */
+.cf-mf-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color, #33333f);
+  background: linear-gradient(180deg, rgba(122, 162, 255, 0.10), transparent);
+}
+.cf-mf-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.cf-mf-title-icon {
+  display: inline-flex;
+  width: 26px; height: 26px;
+  align-items: center; justify-content: center;
+  border-radius: 8px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 14px;
+}
+.cf-mf-summary { flex: 1; min-width: 0; font-size: 12.5px; color: var(--descrip-text, #b9b9c6); }
+.cf-mf-c-miss { color: #7aa2ff; }
+.cf-mf-c-warn { color: #f5b642; }
+.cf-mf-c-ok   { color: #4ade80; }
+.cf-mf-head-actions { display: flex; gap: 6px; }
+.cf-mf-refresh, .cf-mf-close {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #3a3a46);
+  background: transparent;
+  color: var(--input-text, #ddd);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  transition: background 0.15s;
+}
+.cf-mf-refresh:hover, .cf-mf-close:hover { background: rgba(255,255,255,0.08); }
+
+/* ---- Body ---- */
+.cf-mf-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* The body's children (groups, token panel…) keep their natural height: without this, flex
+   squeezes them (overflow:hidden ⇒ min-height 0) instead of letting the body scroll, and the
+   rows overlap as soon as there are many models. */
+.cf-mf-body > * { flex-shrink: 0; }
+.cf-mf-body::-webkit-scrollbar { width: 10px; }
+.cf-mf-body::-webkit-scrollbar-thumb { background: #44444f; border-radius: 5px; }
+
+/* ---- HuggingFace token panel (beginner guidance) ---- */
+.cf-mf-token-panel {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(245, 182, 66, 0.10);
+  border: 1px solid rgba(245, 182, 66, 0.45);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.cf-mf-token-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #f5c667;
+  margin-bottom: 6px;
+}
+.cf-mf-token-intro { margin: 0 0 10px; color: var(--input-text, #e0e0e6); }
+.cf-mf-token-steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cf-mf-token-steps a { color: #9db4ff; }
+.cf-mf-token-repos {
+  margin: 6px 0 2px;
+  padding-left: 16px;
+  list-style: "→ ";
+}
+.cf-mf-token-repos li { margin: 2px 0; }
+.cf-mf-token-repos a {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  word-break: break-all; /* repository URLs can get very long */
+}
+.cf-mf-token-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+.cf-mf-token-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: var(--comfy-input-bg, #22222b);
+  color: var(--input-text, #e6e6e6);
+  border: 1px solid var(--border-color, #4a4a56);
+}
+.cf-mf-token-input:focus { outline: none; border-color: #7aa2ff; }
+.cf-mf-token-show {
+  width: 34px; height: 32px;
+  border-radius: 7px;
+  border: 1px solid var(--border-color, #4a4a56);
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+}
+.cf-mf-token-show:hover { background: rgba(255,255,255,0.08); }
+.cf-mf-token-save {
+  padding: 7px 16px;
+  border-radius: 7px;
+  border: none;
+  font-weight: 700;
+  font-size: 12.5px;
+  background: linear-gradient(180deg, #4a8cff, #3b6fe0);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cf-mf-token-save:hover:not(:disabled) { filter: brightness(1.1); }
+.cf-mf-token-save:disabled { opacity: 0.5; cursor: default; }
+.cf-mf-token-forget {
+  padding: 7px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid rgba(251, 113, 133, 0.5);
+  background: rgba(251, 113, 133, 0.12);
+  color: #fb7185;
+  cursor: pointer;
+}
+.cf-mf-token-forget:hover { background: rgba(251, 113, 133, 0.25); }
+.cf-mf-token-forget[hidden] { display: none; }
+
+.cf-mf-token-status { margin-top: 8px; font-size: 12px; min-height: 16px; }
+.cf-mf-token-status-wait { color: #b9b9c6; }
+.cf-mf-token-status-ok   { color: #6ee7a0; }
+.cf-mf-token-status-err  { color: #fb7185; }
+
+/* Key button in the header */
+.cf-mf-key {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #3a3a46);
+  background: transparent;
+  color: var(--input-text, #ddd);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.15s;
+}
+.cf-mf-key:hover { background: rgba(255,255,255,0.08); }
+
+/* ---- Groupes ---- */
+.cf-mf-group {
+  border: 1px solid var(--border-color, #2e2e38);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+}
+.cf-mf-group-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap; /* unknown category or long path: wraps instead of overflowing */
+  gap: 4px 10px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border-color, #2e2e38);
+}
+.cf-mf-group-name {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #9db4ff;
+}
+.cf-mf-group-meta {
+  font-size: 11px;
+  color: var(--descrip-text, #8b8b98);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Lignes ---- */
+.cf-mf-rows { display: flex; flex-direction: column; }
+.cf-mf-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+.cf-mf-row:first-child { border-top: none; }
+.cf-mf-row.is-done { background: rgba(74, 222, 128, 0.06); }
+.cf-mf-cb { width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6; }
+.cf-mf-info { min-width: 0; }
+.cf-mf-fname {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cf-mf-sub { display: flex; align-items: center; gap: 8px; margin-top: 3px; flex-wrap: wrap; }
+.cf-mf-size { font-size: 11px; color: var(--descrip-text, #8b8b98); }
+
+/* ---- Badges de statut ---- */
+.cf-mf-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.cf-mf-badge-ok   { background: rgba(74, 222, 128, 0.16); color: #6ee7a0; }
+.cf-mf-badge-warn { background: rgba(245, 182, 66, 0.16); color: #f5c667; }
+.cf-mf-badge-diff { background: rgba(249, 115, 22, 0.16); color: #fb923c; }
+.cf-mf-badge-miss { background: rgba(59, 130, 246, 0.18); color: #93b4ff; }
+.cf-mf-badge-unk  { background: rgba(148, 148, 160, 0.18); color: #b6b6c2; }
+.cf-mf-other {
+  font-size: 10px; color: #8b8b98; cursor: help;
+  border-bottom: 1px dotted #8b8b98;
+}
+
+/* ---- Destination ---- */
+.cf-mf-dest { display: flex; gap: 6px; align-items: center; }
+.cf-mf-catsel {
+  max-width: 190px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  background: var(--comfy-input-bg, #2a2a34);
+  color: var(--input-text, #e6e6e6);
+  border: 1px solid var(--border-color, #3a3a46);
+  cursor: pointer;
+}
+.cf-mf-catsel { border-color: #f5b642; }
+
+/* Pile verticale : emplacement racine (main / extra path) au-dessus du sous-dossier */
+.cf-mf-destcol { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cf-mf-dest { min-width: 0; }
+.cf-mf-locsel {
+  max-width: 200px;
+  /* A long path must neither widen the column nor spill over the buttons: it is truncated
+     with an ellipsis, the full path staying in the tooltip. */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  background: var(--comfy-input-bg, #2a2a34);
+  color: var(--input-text, #e6e6e6);
+  border: 1px solid var(--border-color, #3a3a46);
+  cursor: pointer;
+}
+.cf-mf-locsel option:disabled { color: #6b6b76; }
+
+/* Editable subfolder field (pick an existing one or create one) */
+.cf-mf-subwrap { display: flex; }
+.cf-mf-subinput {
+  width: 200px;
+  max-width: 200px;
+  padding: 4px 8px 4px 24px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  background: var(--comfy-input-bg, #2a2a34) no-repeat 7px center;
+  /* folder icon as inline SVG (data URI) */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8b98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/></svg>");
+  color: var(--input-text, #e6e6e6);
+  border: 1px solid var(--border-color, #3a3a46);
+}
+.cf-mf-subinput::placeholder { color: #7c7c88; }
+.cf-mf-subinput:focus { outline: none; border-color: #7aa2ff; }
+/* New subfolder (to be created): green outline to make the creation obvious */
+.cf-mf-subinput-new { border-color: #4ade80; }
+
+/* ---- Action / progression ---- */
+.cf-mf-action { display: flex; align-items: center; gap: 8px; min-width: 130px; justify-content: flex-end; }
+.cf-mf-dl-one {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #3b82f6;
+  background: rgba(59, 130, 246, 0.14);
+  color: #bcd0ff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.cf-mf-dl-one:hover:not(:disabled) { background: rgba(59, 130, 246, 0.28); }
+.cf-mf-dl-one:disabled { opacity: 0.4; cursor: default; }
+
+/* Relink: the alternative to downloading a duplicate (amber, like its badge). */
+.cf-mf-relink {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #f5b642;
+  background: rgba(245, 182, 66, 0.14);
+  color: #f5c667;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.cf-mf-relink:hover:not(:disabled) { background: rgba(245, 182, 66, 0.28); }
+.cf-mf-relink:disabled { opacity: 0.4; cursor: default; }
+
+/* Link done: the button gives way to this acknowledgement. */
+.cf-mf-relinked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.14);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #6ee7a0;
+  cursor: help;
+  white-space: nowrap;
+}
+/* Coup de projecteur au moment du clic. */
+.cf-mf-relinked-badge.cf-mf-pop { animation: cf-mf-pop 0.5s ease-out; }
+.cf-mf-row.cf-mf-row-flash { animation: cf-mf-row-flash 1s ease-out; }
+@keyframes cf-mf-pop {
+  0% { transform: scale(0.7); opacity: 0.2; }
+  55% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes cf-mf-row-flash {
+  from { background: rgba(74, 222, 128, 0.22); }
+  to { background: transparent; }
+}
+
+.cf-mf-progress-wrap { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
+.cf-mf-progress {
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.cf-mf-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #6ea8ff);
+  transition: width 0.2s;
+}
+.cf-mf-progress-txt { font-size: 10.5px; color: var(--descrip-text, #9b9ba8); }
+.cf-mf-cancel {
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #3a3a46);
+  background: transparent;
+  color: #f88;
+  cursor: pointer;
+  font-size: 12px;
+}
+.cf-mf-cancel:hover { background: rgba(255, 100, 100, 0.15); }
+.cf-mf-cancel:disabled { opacity: 0.4; cursor: default; }
+/* Cancellation under way: button neutralised, frozen "Cancelling…" text */
+.is-cancelling .cf-mf-progress-bar { background: #6b6b76; }
+.is-cancelling .cf-mf-progress-txt { color: #f5b642; }
+.cf-mf-row-err { font-size: 11px; color: #fb7185; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-mf-done-badge { font-size: 12px; font-weight: 700; color: #6ee7a0; }
+
+/* ---- Footer ---- */
+.cf-mf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color, #33333f);
+  background: rgba(0, 0, 0, 0.18);
+}
+.cf-mf-foot-info { font-size: 12px; color: var(--descrip-text, #b9b9c6); }
+/* Reminder: relink changes the in-memory graph, not the workflow file. */
+.cf-mf-save-hint { font-size: 11.5px; font-weight: 600; color: #6ee7a0; }
+.cf-mf-save-hint[hidden] { display: none; }
+.cf-mf-dl-all {
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(180deg, #4a8cff, #3b6fe0);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
+  transition: filter 0.15s, transform 0.1s;
+}
+.cf-mf-dl-all:hover:not(:disabled) { filter: brightness(1.1); }
+.cf-mf-dl-all:active:not(:disabled) { transform: translateY(1px); }
+.cf-mf-dl-all:disabled {
+  background: #3a3a46;
+  color: #7c7c88;
+  cursor: default;
+  box-shadow: none;
+}
+
+/* ---- States (empty / error / loading) ---- */
+.cf-mf-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 50px 20px;
+  text-align: center;
+  color: var(--descrip-text, #a9a9b6);
+}
+.cf-mf-state-icon { font-size: 34px; opacity: 0.8; }
+.cf-mf-state p { margin: 0; font-size: 13px; }
+.cf-mf-muted { color: #8b8b98; font-size: 12px; max-width: 420px; }
+.cf-mf-state-err { color: #fb7185; }
+
+.cf-mf-spinner {
+  width: 30px; height: 30px;
+  border: 3px solid rgba(122, 162, 255, 0.25);
+  border-top-color: #7aa2ff;
+  border-radius: 50%;
+  animation: cf-mf-spin 0.8s linear infinite;
+}
+@keyframes cf-mf-spin { to { transform: rotate(360deg); } }
+
+/* ---- Narrow screens: destination below the name (2 rows) instead of crushing columns ---- */
+@media (max-width: 760px) {
+  .cf-mf-row { grid-template-columns: 22px minmax(0, 1fr) auto; }
+  .cf-mf-row .cf-mf-dest { grid-column: 2 / 4; }
+  .cf-mf-destcol { flex: 1; }
+  .cf-mf-subwrap { width: 100%; }
+  .cf-mf-locsel, .cf-mf-subinput { width: 100%; max-width: none; }
+  .cf-mf-action { min-width: 0; }
+}
+
+/* ---- Light theme ---- */
+:root[data-theme="light"] .cf-mf-card,
+.comfyui-body-top ~ * :root[data-theme="light"] .cf-mf-card {
+  background: #f5f5f8;
+  color: #1c1c24;
+  border-color: #d5d5df;
+}

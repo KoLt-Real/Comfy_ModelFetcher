@@ -1,0 +1,107 @@
+"""Location labels: discriminating, short, and without UI overflow.
+
+   python tests/e2e/test_location_labels.py
+"""
+import os, sys
+from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from harness import ANALYZE as _BASE, serve  # noqa: E402
+
+BASE, srv, _sandbox = serve()
+fails = []
+def ck(n, c, e=""):
+    print(("OK   " if c else "FAIL ") + n + ("" if c else "  -> " + str(e)))
+    if not c: fails.append(n)
+
+def labels(pg, dirs):
+    return pg.evaluate("(d) => window.popup.locationLabels(d)", dirs)
+
+with sync_playwright() as pw:
+    b = pw.chromium.launch(); pg = b.new_page(viewport={"width": 1100, "height": 700})
+    pg.on("pageerror", lambda e: ck("JS error: " + str(e), False))
+    pg.goto(BASE + "/index.html")
+    pg.wait_for_function("window.ready === true")
+
+    # ---- the case from the screenshot: two different "models/clip" -----------
+    real_dirs = [r"D:\ComfyUI_MAIN\models\text_encoders",
+                 r"D:\ComfyUI_MAIN\models\clip",
+                 r"E:\Shared\AI\models\clip",
+                 r"D:\ComfyUI_ALT\models\text_encoders",
+                 r"D:\ComfyUI_MAIN\output\clip"]
+    out = labels(pg, real_dirs)
+    ck("the 5 locations have DISTINCT labels", len(set(out)) == 5, out)
+    ck("the two models/clip are told apart",
+       len([o for o in out if o.endswith("models/clip")]) == 2
+       and out[1] != out[2], out)
+    ck("the distinguishing segment is visible",
+       "ComfyUI_MAIN" in out[1] and "ComfyUI_MAIN" not in out[2], out)
+    print("        labels obtained:", out)
+
+    # ---- no regression when there is no ambiguity ---------------------------
+    out = labels(pg, ["/comfy/models/checkpoints", "/comfy/models/loras"])
+    ck("simple case: 2 segments as before", out == ["models/checkpoints", "models/loras"], out)
+
+    # ---- one path being the suffix of another --------------------------------
+    out = labels(pg, ["/models/clip", "/opt/extra/models/clip"])
+    ck("suffix: told apart all the same", len(set(out)) == 2, out)
+
+    # ---- deep paths: middle elided, uniqueness preserved ---------------------
+    out = labels(pg, ["/mnt/disk1/a/b/c/models/clip", "/mnt/disk2/a/b/c/models/clip"])
+    ck("deep paths: still distinct", len(set(out)) == 2, out)
+    ck("deep paths: labels elided, hence short",
+       all(len(o) <= 34 for o in out), out)
+    print("        deep:", out)
+
+    # ---- tricky case: eliding must not recreate an ambiguity ----------------
+    out = labels(pg, ["/x1/c1/c2/c3/models/clip", "/x2/c1/c2/c3/models/clip",
+                      "/x1/d1/d2/d3/models/clip"])
+    ck("eliding does not reintroduce an ambiguity", len(set(out)) == 3, out)
+
+    ck("a single location works", len(labels(pg, ["/comfy/models/vae"])) == 1)
+
+    # ---- UI: the select must not overflow ------------------------------------
+    long_dirs = [{"dir": r"D:\ComfyUI_MAIN\models\text_encoders", "exists": True,
+                  "is_default": True, "subfolders": ["", "Flux"]},
+                 {"dir": "/mnt/a/really/very/very/long/path/to/models/text_encoders",
+                  "exists": True, "is_default": False, "subfolders": [""]},
+                 {"dir": r"E:\Other\Install\models\text_encoders", "exists": False,
+                  "is_default": False, "subfolders": [""]}]
+    payload = dict(_BASE)
+    payload["categories"] = dict(_BASE["categories"])
+    payload["categories"]["checkpoints"] = dict(_BASE["categories"]["checkpoints"],
+                                                locations=long_dirs)
+    pg.evaluate("(p) => { window.api.payload = p; }", payload)
+    pg.evaluate("() => { window.app.graph = { _nodes: [], setDirtyCanvas(){} }; }")
+    pg.evaluate("() => window.popup.openPopup([{node_id:1,title:'n',text:'x'}])")
+    pg.wait_for_selector(".cf-mf-locsel")
+
+    metrics = pg.evaluate("""() => {
+      const sel = document.querySelector('.cf-mf-locsel');
+      const row = sel.closest('.cf-mf-row');
+      const card = document.querySelector('.cf-mf-card');
+      const action = row.querySelector('.cf-mf-action');
+      return {
+        selW: sel.getBoundingClientRect().width,
+        selRight: sel.getBoundingClientRect().right,
+        actionLeft: action.getBoundingClientRect().left,
+        rowRight: row.getBoundingClientRect().right,
+        cardRight: card.getBoundingClientRect().right,
+        bodyScroll: document.querySelector('.cf-mf-body').scrollWidth,
+        bodyClient: document.querySelector('.cf-mf-body').clientWidth,
+      };
+    }""")
+    ck("the select stays within its max width (200px)", metrics["selW"] <= 201, metrics)
+    ck("the select does not overlap the action column",
+       metrics["selRight"] <= metrics["actionLeft"] + 1, metrics)
+    ck("the row does not overflow the card",
+       metrics["rowRight"] <= metrics["cardRight"] + 1, metrics)
+    ck("no horizontal scrolling introduced",
+       metrics["bodyScroll"] <= metrics["bodyClient"] + 1, metrics)
+    ck("the full path stays in the tooltip",
+       pg.evaluate("() => document.querySelector('.cf-mf-locsel option').title").endswith("text_encoders"))
+    b.close()
+
+srv.shutdown()
+print(f"\n{'FAILURES: ' + ', '.join(fails) if fails else 'labels OK'}")
+sys.exit(1 if fails else 0)
