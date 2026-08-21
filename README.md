@@ -75,9 +75,10 @@ the root as soon as the copies span more than one — `models/unet · Minimax` n
 `models/diffusion_models · MiniMax`. Two roots ending the same way are dug into until they read
 differently, and the full path stays one hover away.
 
-![Two likely-duplicate rows. The first is already relinked — a green ✓ Linked pill next to its
-Link to menu; the second still shows an amber Relink button. On each row the Link to line sits
-above the Save to fields, separated by an OR, and the footer reminds you to save the
+![The Link to menu open on a likely duplicate: the same file exists twice, once under
+models/diffusion_models and once under models/unet, and each entry is named by its root and its
+subfolder. Above it, a row already relinked shows a green Linked pill; below, a missing model
+has no Link to line at all — only Save to and Download. The footer reminds you to save the
 workflow](docs/ui-relink.png)
 
 ### Downloads
