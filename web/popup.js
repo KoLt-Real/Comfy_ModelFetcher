@@ -573,6 +573,34 @@ function buildLinkedBadge(m, count, unverified, pick) {
 // Menu of the copies already on disk. Shown only when there is a real choice to make.
 // Without it Relink silently took the first same-size copy, while the destination menu right
 // next to it — which only ever drove downloads — read as though it were the one deciding.
+// What to write on each entry of the menu: WHERE the copy lives, not its full path.
+//
+// Every entry repeats the same filename — it is the row's title, two centimetres to the left —
+// so spelling it out again buries the only part that differs. Seen on a real install: two
+// entries 60 characters long, identical but for the case of one folder ("Minimax" vs
+// "MiniMax"), and no way to tell which disk each one sat on.
+//
+// The root is named as soon as the copies span more than one, because the subfolder alone then
+// says nothing about which tree it belongs to. Labelling is shared with the "Save to" menu, so
+// two roots ending the same way stay distinguishable.
+export function copyLabels(cands) {
+  const roots = [...new Set(cands.map((c) => c.root))];
+  // locationLabels() needs distinct paths: mapping through the unique roots also keeps two
+  // copies of the same root from being labelled "(1)" and "(2)" by its fallback.
+  let named = null;
+  if (roots.length > 1 && cands.every((c) => c.root)) {
+    const labels = locationLabels(roots);
+    named = new Map(roots.map((r, i) => [r, labels[i]]));
+  }
+  return cands.map((c) => {
+    const cut = c.value.lastIndexOf("/");
+    // A copy at the root of a folder would resolve by its bare name, so it never reaches this
+    // menu; the guard is there so a malformed value degrades to something readable.
+    const folder = cut > 0 ? c.value.slice(0, cut) : c.value;
+    return named ? `${named.get(c.root)} · ${folder}` : folder;
+  });
+}
+
 function buildCopyControl(m, pick) {
   const cands = relinkCandidates(m);
   // A single copy is not a choice: showing the path plainly says more than a one-entry menu,
@@ -588,9 +616,10 @@ function buildCopyControl(m, pick) {
   const sel = document.createElement("select");
   sel.className = "cf-mf-copysel";
   sel.title = "Which copy already on disk the loader node(s) should point at.";
+  const labels = copyLabels(cands);
   // Keyed by index rather than by path: shorter, and nothing here depends on the value.
   cands.forEach((c, i) => {
-    const opt = new Option(c.value, String(i));
+    const opt = new Option(labels[i], String(i));
     opt.title = `${c.path}\n${fmtSize(c.size)}`;
     if (c.path === pick.path) opt.selected = true;
     sel.appendChild(opt);

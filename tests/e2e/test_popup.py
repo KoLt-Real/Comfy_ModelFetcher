@@ -274,14 +274,15 @@ with sync_playwright() as pw:
     picker = row(page, FLUX).locator(".cf-mf-copysel")
     labels = picker.locator("option").all_inner_texts()
     check("picker offered when several copies exist", picker.count() == 1)
+    # One root here, so the folder alone locates each copy; the filename is the row's title.
     check("only the same-size copies are listed, one entry per widget value",
-          labels == ["Flux/flux1-dev.safetensors", "archive/flux1-dev.safetensors"], labels)
+          labels == ["Flux", "archive"], labels)
     check("the automatic choice is the one selected",
-          picker.evaluate("el => el.selectedOptions[0].textContent") == "Flux/flux1-dev.safetensors")
+          picker.evaluate("el => el.selectedOptions[0].textContent") == "Flux")
     check("no picker on a row with a single copy",
           row(page, ORPHAN).locator(".cf-mf-copysel").count() == 0)
 
-    picker.select_option(label="archive/flux1-dev.safetensors")
+    picker.select_option(label="archive")
     check("the button follows the pick",
           "archive/flux1-dev.safetensors"
           in (row(page, FLUX).locator(".cf-mf-relink").get_attribute("title") or ""))
@@ -295,9 +296,59 @@ with sync_playwright() as pw:
     page.wait_for_selector(".cf-mf-row")
     check("the pick survives on the graph's word",
           row(page, FLUX).locator(".cf-mf-copysel")
-          .evaluate("el => el.selectedOptions[0].textContent") == "archive/flux1-dev.safetensors")
+          .evaluate("el => el.selectedOptions[0].textContent") == "archive")
     check("and the row reads as linked",
           row(page, FLUX).locator(".cf-mf-relinked-badge").count() == 1)
+
+    # ---- 11. Telling apart copies that live on different disks -------------
+    # Seen on a real install: two entries 60 characters long, identical but for the case of a
+    # folder, and nothing saying which tree each one belonged to.
+    NAME = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+    DISKS = copy.deepcopy(ANALYZE)
+    DISKS["models"] = [{**DISKS["models"][0], "id": "diffusion_models/" + NAME,
+                        "filename": NAME, "category": "diffusion_models", "remote_size": 20,
+                        "local_matches": [
+        {"path": f"/opt/01_ComfyUI/models/unet/Minimax/{NAME}", "size": 20, "same_size": True,
+         "value": f"Minimax/{NAME}", "root": "/opt/01_ComfyUI/models/unet"},
+        {"path": f"/mnt/M/ComfyUI/models/diffusion_models/MiniMax/{NAME}", "size": 20,
+         "same_size": True, "value": f"MiniMax/{NAME}",
+         "root": "/mnt/M/ComfyUI/models/diffusion_models"},
+    ], "relink": {"value": f"Minimax/{NAME}",
+                  "path": f"/opt/01_ComfyUI/models/unet/Minimax/{NAME}",
+                  "root": "/opt/01_ComfyUI/models/unet"}}]
+    DISKS["categories"] = {"diffusion_models": {"target_dir": "/opt/01_ComfyUI/models/unet",
+        "all_dirs": ["/opt/01_ComfyUI/models/unet", "/mnt/M/ComfyUI/models/diffusion_models"],
+        "known": True, "subfolders": [""], "locations": []}}
+    MX = "diffusion_models/" + NAME
+    page.evaluate("(p) => { window.api.payload = p; }", DISKS)
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-M.json'; }")
+    page.evaluate("""() => { window.app.graph = { _nodes: [{ type: "UNETLoader",
+      widgets: [{ name: "unet_name",
+                  value: "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+                  options: { values: [] } }], setDirtyCanvas() {} }], setDirtyCanvas() {} }; }""")
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+
+    opts = row(page, MX).locator(".cf-mf-copysel option").all_inner_texts()
+    check("the filename is not repeated in every entry",
+          all(NAME not in o for o in opts), opts)
+    check("each entry names the root it belongs to",
+          all(("unet" in o or "diffusion_models" in o) for o in opts), opts)
+    check("two roots ending differently stay distinguishable", len(set(opts)) == 2, opts)
+    check("and the subfolder is kept, case included",
+          any(o.endswith("Minimax") for o in opts) and any(o.endswith("MiniMax") for o in opts),
+          opts)
+    titles = row(page, MX).locator(".cf-mf-copysel option").evaluate_all(
+        "els => els.map((e) => e.title)")
+    check("the full path stays one hover away",
+          any("/mnt/M/" in t for t in titles) and any("/opt/01_ComfyUI/" in t for t in titles),
+          titles)
+    # Picking the copy on the other disk must still write ITS value, case included.
+    row(page, MX).locator(".cf-mf-copysel").select_option(
+        label=next(o for o in opts if o.endswith("MiniMax")))
+    row(page, MX).locator(".cf-mf-relink").click()
+    check("the copy chosen on the other disk is the one written",
+          page.evaluate("() => window.app.graph._nodes[0].widgets[0].value") == "MiniMax/" + NAME)
 
     browser.close()
 

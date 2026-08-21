@@ -1,4 +1,5 @@
-"""Location labels: discriminating, short, and without UI overflow.
+"""Location labels — for the "Save to" menu and for the copies "Link to" offers:
+discriminating, short, and without UI overflow.
 
    python tests/e2e/test_location_labels.py
 """
@@ -59,6 +60,45 @@ with sync_playwright() as pw:
     ck("eliding does not reintroduce an ambiguity", len(set(out)) == 3, out)
 
     ck("a single location works", len(labels(pg, ["/comfy/models/vae"])) == 1)
+
+    # ---- the copies offered by "Link to" ------------------------------------
+    # Same requirement, other menu: every entry repeats the row's filename, so what has to be
+    # readable is WHERE each copy lives — which tree, which subfolder.
+    NAME = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+    def copies(pg, rows):
+        return pg.evaluate("(c) => window.popup.copyLabels(c)",
+                           [{"root": r, "value": v, "path": r + "/" + v,
+                             "size": 1, "same_size": True} for r, v in rows])
+
+    out = copies(pg, [("/o/models/unet", "Flux/x.safetensors"),
+                      ("/o/models/unet", "Archive/x.safetensors")])
+    ck("one root: the subfolder alone locates the copy", out == ["Flux", "Archive"], out)
+
+    # The case from a real install: same file under two roots of the SAME category, the
+    # subfolders differing only in case. Unreadable while the label was the full path.
+    out = copies(pg, [("/opt/01_ComfyUI/models/unet", f"Minimax/{NAME}"),
+                      ("/opt/01_ComfyUI/models/diffusion_models", f"MiniMax/{NAME}")])
+    ck("two roots: each entry says which one",
+       out == ["models/unet · Minimax", "models/diffusion_models · MiniMax"], out)
+    ck("the filename is never repeated", all(NAME not in o for o in out), out)
+
+    # Two disks whose roots end the SAME way: the labels have to dig deeper.
+    out = copies(pg, [("/opt/01_ComfyUI/models/diffusion_models", f"Minimax/{NAME}"),
+                      ("/mnt/M/ComfyUI/models/diffusion_models", f"MiniMax/{NAME}")])
+    ck("two disks: still told apart", len(set(out)) == 2, out)
+    ck("two disks: the differing segment is shown",
+       "01_ComfyUI" in out[0] and "01_ComfyUI" not in out[1], out)
+    print("        two disks:", out)
+
+    # Two copies sharing a root, a third elsewhere: the shared root must not be labelled
+    # "(1)" and "(2)" by the uniqueness fallback.
+    out = copies(pg, [("/o/models/unet", "A/x.st"), ("/o/models/unet", "B/x.st"),
+                      ("/mnt/N/models/unet", "C/x.st")])
+    ck("a root shared by two copies keeps one label",
+       out[0].rsplit(" · ", 1)[0] == out[1].rsplit(" · ", 1)[0], out)
+    ck("three copies, three distinct labels", len(set(out)) == 3, out)
+    ck("no (1)/(2) fallback leaking into a label",
+       not any("(1)" in o or "(2)" in o for o in out), out)
 
     # ---- UI: the select must not overflow ------------------------------------
     long_dirs = [{"dir": r"D:\ComfyUI_MAIN\models\text_encoders", "exists": True,

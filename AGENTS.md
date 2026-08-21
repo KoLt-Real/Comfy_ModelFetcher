@@ -109,7 +109,7 @@ Python and JS tests need nothing beyond what ComfyUI already provides; the brows
 | `tests/js/relink.test.js` | widget matching, subgraphs, promoted-widget double counting |
 | `tests/e2e/test_popup.py` | Relink flow, the copy picker, per-workflow state, error/flash rows |
 | `tests/e2e/test_token_panel.py` | token panel: save, remove, env-vs-file |
-| `tests/e2e/test_location_labels.py` | location labels stay unique and short; select cannot overflow the row |
+| `tests/e2e/test_location_labels.py` | location labels stay unique and short, for the destination menu and for the offered copies (roots on different disks included); select cannot overflow the row |
 | `tests/test_scanner_output_dirs.py` | `output/<category>` stays scanned but never becomes a destination |
 
 The JS and browser tests copy the **real** `web/` sources into a temporary fake-ComfyUI tree at

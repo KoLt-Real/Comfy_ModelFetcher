@@ -70,6 +70,11 @@ which is also why a size mismatch never gets a Relink button at all — and copi
 relative path under two roots count once, since ComfyUI would load the same file either way.
 With a single copy, **Link to** simply shows its path.
 
+Each entry says **where** the copy lives rather than repeating the filename: the subfolder, and
+the root as soon as the copies span more than one — `models/unet · Minimax` next to
+`models/diffusion_models · MiniMax`. Two roots ending the same way are dug into until they read
+differently, and the full path stays one hover away.
+
 ![Two likely-duplicate rows. The first is already relinked — a green ✓ Linked pill next to its
 Link to menu; the second still shows an amber Relink button. On each row the Link to line sits
 above the Save to fields, separated by an OR, and the footer reminds you to save the
