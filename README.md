@@ -59,8 +59,21 @@ the file in `checkpoints/Flux/`. On a **Likely duplicate**, press **Relink**:
   workflow shows the button again — nothing is cached or guessed;
 - if no node in the workflow uses that file, the button is disabled and says so.
 
-![Relink in action: amber Relink buttons on likely duplicates, green Linked pills once done,
-and the footer reminding you to save the workflow](docs/ui-relink.png)
+Each row carries its two decisions on separate lines — **Link to** … *Relink* above,
+**Save to** … *Download* below — so every button sits next to the field that drives it.
+
+**Several copies on disk?** When the same filename sits in more than one subfolder, **Link to**
+becomes a menu and Relink points where you tell it to. It opens on the copy the workflow
+already uses, falling back to the same-size one found first, and only ever lists real choices:
+copies whose size contradicts the source are left out — those are another version of the model,
+which is also why a size mismatch never gets a Relink button at all — and copies sharing a
+relative path under two roots count once, since ComfyUI would load the same file either way.
+With a single copy, **Link to** simply shows its path.
+
+![Two likely-duplicate rows. The first is already relinked — a green ✓ Linked pill next to its
+Link to menu; the second still shows an amber Relink button. On each row the Link to line sits
+above the Save to fields, separated by an OR, and the footer reminds you to save the
+workflow](docs/ui-relink.png)
 
 ### Downloads
 - Sequential queue with a single worker, **live progress** (bytes, total, speed) pushed over

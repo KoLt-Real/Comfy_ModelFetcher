@@ -50,20 +50,30 @@ tests/               see below — run them
    decides this, and `relink_target()` uses the same predicate on purpose: a row labelled
    *Likely duplicate* must always have something to relink, or it is a dead end (status says
    "you have it", the only button says "download it again").
-6. **Relink state is read from the graph, never cached.** `linkState()` is called on every
-   render. A cached "already linked" flag would lie after an undo or a workflow switch.
-7. **Popup preferences are keyed per workflow.** Several workflows are open at once; state must
+6. **A row is a grid of two independent lines**, `Link to … Relink` and `Save to … Download`
+   (`.cf-mf-ops`, one `.cf-mf-opline` each, `display: contents` so both share the columns).
+   `row.action` stays the download slot alone — progress, cancel, error and "✓ Installed" all
+   land there — and `row.actionLink` holds the relink button. `flashRow()` takes the slot as an
+   argument for the same reason: a message shown next to the wrong button blames it.
+7. **Relink state is read from the graph, never cached.** `linkState()` is called on every
+   render. A cached "already linked" flag would lie after an undo or a workflow switch. Which
+   copy the row points at follows the same rule: `relinkPick()` prefers the user's choice, then
+   whichever copy the graph already uses, and only then the server's automatic pick — a popup
+   reopened on a relinked workflow must not claim the row is unlinked because it defaulted
+   elsewhere. `relink_target()` stays the default, and the invariant test checks it is always
+   one of the copies the menu offers.
+8. **Popup preferences are keyed per workflow.** Several workflows are open at once; state must
    not leak between tabs. See `currentWorkflowKey()` and its epoch fallback.
-8. **Model ids must be unique.** `parse_notes()` disambiguates two different URLs that resolve
+9. **Model ids must be unique.** `parse_notes()` disambiguates two different URLs that resolve
    to the same `category/filename`. The id is both the UI row key and the server job id.
-9. **A `.part` file is only ever appended to for the same source URL.** `_part_path()` mixes a
+10. **A `.part` file is only ever appended to for the same source URL.** `_part_path()` mixes a
    hash of the URL into the name; resume decisions rely on it. Never go back to a fixed
    `<dest>.part`, or two models sharing a filename will be spliced into one corrupt file.
-10. **`huggingface_hub` is the HF protocol authority.** File sizes (`get_hf_file_metadata`) and
+11. **`huggingface_hub` is the HF protocol authority.** File sizes (`get_hf_file_metadata`) and
    token validation (`HfApi.whoami`) delegate to it; both fall back to a direct HTTP call only
    when the import fails. Do not reintroduce a hand-rolled HF HEAD dance — a wrong size flips a
    model between "duplicate" and "different content".
-11. **Frontend has no build step.** Plain ES modules loaded by ComfyUI from `web/`. Do not add
+12. **Frontend has no build step.** Plain ES modules loaded by ComfyUI from `web/`. Do not add
    a bundler, TypeScript, or npm dependencies.
 
 ## Conventions
@@ -88,7 +98,7 @@ Python and JS tests need nothing beyond what ComfyUI already provides; the brows
 | Suite | Covers |
 |---|---|
 | `tests/test_scanner_classify.py` | status ladder, proven equivalent to the pre-simplification version over the full truth table |
-| `tests/test_scanner_relink.py` | relink target: subfolders, extra paths, size mismatch; the *no dead-end row* invariant over 162 disk layouts |
+| `tests/test_scanner_relink.py` | relink target: subfolders, extra paths, size mismatch; the *no dead-end row* invariant over 162 disk layouts, and that the automatic pick is always one of the offered copies |
 | `tests/test_security.py` | token host allowlist, path-traversal confinement |
 | `tests/test_notes_parser.py` | unique, stable, order-independent model ids |
 | `tests/test_remote_cache.py` | sizes cached forever, errors briefly, `invalidate()` |
@@ -97,7 +107,7 @@ Python and JS tests need nothing beyond what ComfyUI already provides; the brows
 | `tests/test_hf_delegation.py` | huggingface_hub delegation and its fallback, both paths |
 | `tests/test_routes.py` | handlers stay off the event loop; response contract |
 | `tests/js/relink.test.js` | widget matching, subgraphs, promoted-widget double counting |
-| `tests/e2e/test_popup.py` | Relink flow, per-workflow state, error/flash rows |
+| `tests/e2e/test_popup.py` | Relink flow, the copy picker, per-workflow state, error/flash rows |
 | `tests/e2e/test_token_panel.py` | token panel: save, remove, env-vs-file |
 | `tests/e2e/test_location_labels.py` | location labels stay unique and short; select cannot overflow the row |
 | `tests/test_scanner_output_dirs.py` | `output/<category>` stays scanned but never becomes a destination |
@@ -113,6 +123,12 @@ run time — there is no duplicated copy to keep in sync.
 - ComfyUI lists model files **relative to each category root**, so a file at the root of an
   *extra* path is reachable by its bare name: no relink is needed there, only for real
   subfolders.
+- Two copies sharing the same **relative path** under two different roots are one and the same
+  choice: a widget value is resolved against every root in order, so both write the same string
+  and load the same file — `get_filename_list()` deduplicates them for that reason. The copy
+  picker does the same (`relinkCandidates()`); listing them separately offers a choice that
+  does nothing. Found on a real install, where `models/unet` and `models/diffusion_models` are
+  both roots of the `diffusion_models` category.
 - `app.refreshComboInNodes()` resets widget values that are not in the refreshed list — never
   call it to "fix" a stale combo; add the value to `widget.options.values` instead.
 - A widget's own value list is the only reliable way to tell two same-named models of different

@@ -2,7 +2,7 @@
 
    python tests/e2e/test_popup.py   (needs: pip install playwright && playwright install chromium)
 """
-import os, sys
+import copy, os, sys
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -71,6 +71,18 @@ with sync_playwright() as pw:
           "No node" in (row(page, ORPHAN).locator(".cf-mf-relink").get_attribute("title") or ""))
     check("save reminder hidden at first",
           page.locator(".cf-mf-save-hint").is_hidden())
+    # Each action sits on its own line, next to the control that drives it.
+    check("a single copy shows its path instead of a one-entry menu",
+          row(page, ORPHAN).locator(".cf-mf-copyfixed").inner_text() == "sub/orphan.safetensors")
+    check("Relink and its control share a line",
+          row(page, FLUX).locator(".cf-mf-opline:not([hidden]) .cf-mf-relink").count() == 1)
+    check("a separator closes the relink line, reading OR",
+          row(page, FLUX).locator(".cf-mf-opsep").inner_text() == "OR")
+    check("but no orphan separator when there is nothing to relink",
+          row(page, DL).locator(".cf-mf-opsep").is_visible() is False)
+    check("a row with nothing to relink has no relink line",
+          row(page, DL).locator(".cf-mf-action-link").count() == 0
+          or row(page, DL).locator(".cf-mf-opline[hidden]").count() == 1)
 
     # ---- 2. Relink click: state change + feedback ---------------------------
     row(page, FLUX).locator(".cf-mf-relink").click()
@@ -181,9 +193,12 @@ with sync_playwright() as pw:
     # switch WITHOUT re-analysing (the popup stays on A's data)
     page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-C.json'; }")
     row(page, FLUX).locator(".cf-mf-relink").click()
+    # The message belongs to the relink line, not to the download one.
     check("relink refused on a workflow that changed",
-          "Workflow changed" in row(page, FLUX).locator(".cf-mf-action").inner_text(),
-          row(page, FLUX).locator(".cf-mf-action").inner_text())
+          "Workflow changed" in row(page, FLUX).locator(".cf-mf-action-link").inner_text(),
+          row(page, FLUX).locator(".cf-mf-action-link").inner_text())
+    check("and Download was not the one blamed",
+          "Workflow changed" not in row(page, FLUX).locator(".cf-mf-action").inner_text())
     check("the graph was NOT modified",
           page.evaluate("() => window.app.graph._nodes[0].widgets[0].value")
           == "flux1-dev.safetensors")
@@ -233,6 +248,56 @@ with sync_playwright() as pw:
     check("the original error message is shown again",
           "boom" in row(page, MYST).locator(".cf-mf-row-err").inner_text(),
           row(page, MYST).locator(".cf-mf-action").inner_text())
+
+    # ---- 10. Several copies on disk: the user picks the one Relink writes ---
+    # Two same-size copies in two subfolders, plus a third of the wrong size. The menu must
+    # offer the first two only, and Relink must obey it rather than the automatic choice.
+    MULTI = copy.deepcopy(ANALYZE)
+    MULTI["models"][0]["local_matches"] = [
+        {"path": "/m/checkpoints/Flux/flux1-dev.safetensors", "size": 100, "same_size": True,
+         "value": "Flux/flux1-dev.safetensors", "root": "/m/checkpoints"},
+        {"path": "/m/checkpoints/archive/flux1-dev.safetensors", "size": 100, "same_size": True,
+         "value": "archive/flux1-dev.safetensors", "root": "/m/checkpoints"},
+        {"path": "/m/checkpoints/old/flux1-dev.safetensors", "size": 42, "same_size": False,
+         "value": "old/flux1-dev.safetensors", "root": "/m/checkpoints"},
+        # Same relative path as the first, under a second registered root: ComfyUI resolves
+        # both to the same widget value, so offering them separately would be a false choice.
+        {"path": "/extra/checkpoints/Flux/flux1-dev.safetensors", "size": 100,
+         "same_size": True, "value": "Flux/flux1-dev.safetensors", "root": "/extra/checkpoints"},
+    ]
+    page.evaluate("(p) => { window.api.payload = p; }", MULTI)
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-P.json'; }")
+    page.evaluate(GRAPH_A)
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+
+    picker = row(page, FLUX).locator(".cf-mf-copysel")
+    labels = picker.locator("option").all_inner_texts()
+    check("picker offered when several copies exist", picker.count() == 1)
+    check("only the same-size copies are listed, one entry per widget value",
+          labels == ["Flux/flux1-dev.safetensors", "archive/flux1-dev.safetensors"], labels)
+    check("the automatic choice is the one selected",
+          picker.evaluate("el => el.selectedOptions[0].textContent") == "Flux/flux1-dev.safetensors")
+    check("no picker on a row with a single copy",
+          row(page, ORPHAN).locator(".cf-mf-copysel").count() == 0)
+
+    picker.select_option(label="archive/flux1-dev.safetensors")
+    check("the button follows the pick",
+          "archive/flux1-dev.safetensors"
+          in (row(page, FLUX).locator(".cf-mf-relink").get_attribute("title") or ""))
+    row(page, FLUX).locator(".cf-mf-relink").click()
+    check("the chosen copy is what lands in the node",
+          page.evaluate("() => window.app.graph._nodes[0].widgets[0].value")
+          == "archive/flux1-dev.safetensors")
+
+    # Reopened, the popup reads the graph: the pick must not fall back to the automatic one.
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+    check("the pick survives on the graph's word",
+          row(page, FLUX).locator(".cf-mf-copysel")
+          .evaluate("el => el.selectedOptions[0].textContent") == "archive/flux1-dev.safetensors")
+    check("and the row reads as linked",
+          row(page, FLUX).locator(".cf-mf-relinked-badge").count() == 1)
 
     browser.close()
 

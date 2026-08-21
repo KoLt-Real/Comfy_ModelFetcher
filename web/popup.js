@@ -354,7 +354,8 @@ function buildRow(m) {
   const initialSubfolders = (savedLoc || defaultLoc)?.subfolders || catMeta?.subfolders || [""];
   const needDest = m.status === "unknown_dest" || !m.category;
   // Link state read back from the graph (not remembered) — see "Per-workflow preferences".
-  const link = m.relink ? linkState(m.filename, m.relink.value) : null;
+  const pick = relinkPick(m);
+  const link = pick ? linkState(m.filename, pick.value) : null;
 
   // column 1: checkbox
   const cb = document.createElement("input");
@@ -373,14 +374,38 @@ function buildRow(m) {
     <div class="cf-mf-fname" title="${esc(m.url)}">${esc(m.filename)}</div>
     <div class="cf-mf-sub">
       <span class="cf-mf-size">${fmtSize(m.remote_size)}</span>
-      ${buildBadge(m, meta, isLinked(link))}
+      <span class="cf-mf-badgewrap">${buildBadge(m, meta, isLinked(link), pick)}</span>
     </div>`;
 
-  // column 3: destination. Root location (main folder or extra path) when the category has
-  // several, then an editable subfolder: pick an existing subfolder (suggestions) OR type a
-  // new one (created at download time).
-  const dest = document.createElement("div");
-  dest.className = "cf-mf-dest";
+  // column 3: one line per action, each ending in ITS OWN button — "link to that copy" and
+  // "save to that folder" are two independent decisions, and a button sitting far from the
+  // field that drives it reads as if it obeyed the other one.
+  const ops = document.createElement("div");
+  ops.className = "cf-mf-ops";
+
+  // line 1 — relink: which copy already on disk the loader nodes should point at.
+  const linkLine = opLine("Link to");
+  const actionLink = document.createElement("div");
+  actionLink.className = "cf-mf-action-link";
+  if (pick) {
+    linkLine.ctl.appendChild(buildCopyControl(m, pick));
+    actionLink.appendChild(buildLinkAction(m, link, pick));
+  } else {
+    linkLine.el.hidden = true;
+  }
+  linkLine.el.appendChild(actionLink);
+  // Hairline closing the relink line, reading "OR": the two lines are alternatives — point the
+  // nodes at a copy you already have, or fetch another one. Carried BY the relink line so it
+  // disappears with it: a row with nothing to relink must not show a rule hanging over its
+  // download line, still less offer a choice between one option and nothing.
+  const sep = document.createElement("div");
+  sep.className = "cf-mf-opsep";
+  sep.textContent = "OR";
+  linkLine.el.appendChild(sep);
+
+  // line 2 — download: where a fetched file is written.
+  const dlLine = opLine("Save to");
+  const dest = dlLine.ctl;
   if (m.status !== "installed") {
     if (needDest) {
       const catSel = document.createElement("select");
@@ -427,28 +452,75 @@ function buildRow(m) {
     }
     destCol.appendChild(subWrap);
     dest.appendChild(destCol);
+  } else {
+    dlLine.label.textContent = "";   // nothing to choose: only a disabled Download remains
   }
 
-  // column 4: action / progress
+  // The download slot keeps its name and its sole ownership of the row state machine:
+  // progress bar, cancel, error and "✓ Installed" all still land here and nowhere else.
   const action = document.createElement("div");
   action.className = "cf-mf-action";
-  action.append(...buildIdleActions(m, link));
+  action.appendChild(buildIdleButton(m));
+  dlLine.el.appendChild(action);
 
-  row.append(cb, info, dest, action);
-  rowById.set(m.id, { model: m, el: row, cb, action, info, state: "idle" });
+  ops.append(linkLine.el, dlLine.el);
+  row.append(cb, info, ops);
+  rowById.set(m.id, { model: m, el: row, cb, action, actionLink, linkLine: linkLine.el,
+                      info, state: "idle" });
   return row;
 }
 
-// Buttons of an idle row. Always rebuilt through these functions: restoring saved innerHTML
-// would lose the listeners (a dead button).
-function buildIdleActions(m, link) {
-  const els = [];
-  if (m.relink) {
-    const st = link || linkState(m.filename, m.relink.value);
-    els.push(isLinked(st) ? buildLinkedBadge(m, st.linked) : buildRelinkButton(m, st));
-  }
-  els.push(buildIdleButton(m));
-  return els;
+// One line of the operations grid: label, controls, button. `display: contents` keeps the
+// three cells in the PARENT grid, so both lines share their column widths and the buttons
+// line up under one another.
+function opLine(labelText) {
+  const el = document.createElement("div");
+  el.className = "cf-mf-opline";
+  const label = document.createElement("span");
+  label.className = "cf-mf-oplabel";
+  label.textContent = labelText;
+  const ctl = document.createElement("div");
+  ctl.className = "cf-mf-opctl";
+  el.append(label, ctl);
+  return { el, label, ctl };
+}
+
+// Copies of the file a loader node may be pointed at.
+//
+// Two filters, both about not offering a choice that is not one:
+// - a copy whose size contradicts the source is another version of the model, the very reason
+//   a size mismatch never gets a Relink button either;
+// - copies sharing a relative path under two roots collapse into one entry. ComfyUI resolves
+//   a widget value against every registered root in order, so both would write the SAME string
+//   and load the SAME file — `get_filename_list` deduplicates them for exactly that reason.
+function relinkCandidates(m) {
+  const all = (m.local_matches || []).filter((c) => c.value);
+  const usable = m.remote_size == null ? all : all.filter((c) => c.same_size);
+  const byValue = new Map();
+  for (const c of usable) if (!byValue.has(c.value)) byValue.set(c.value, c);
+  return [...byValue.values()];
+}
+
+// The copy Relink points at: the user's pick, otherwise the one the graph already uses,
+// otherwise the server's automatic choice.
+//
+// Consulting the graph before falling back matters: reopening the popup on a workflow already
+// relinked to the SECOND copy would otherwise show the automatic pick and claim the row is
+// not linked. Same rule as the link state itself — the graph is the source of truth.
+function relinkPick(m) {
+  if (!m.relink) return null;
+  if (m._relinkPick) return m._relinkPick;
+  const cands = relinkCandidates(m);
+  if (cands.length < 2) return m.relink;
+  return cands.find((c) => isLinked(linkState(m.filename, c.value))) || m.relink;
+}
+
+// The relink line's button, or the pill acknowledging it is already done. Always rebuilt
+// through these functions: restoring saved innerHTML would lose the listeners (a dead button).
+function buildLinkAction(m, link, pick) {
+  const st = link || linkState(m.filename, pick.value);
+  return isLinked(st) ? buildLinkedBadge(m, st.linked, false, pick)
+                      : buildRelinkButton(m, st, pick);
 }
 
 // Linked = every node using this file points at the local copy.
@@ -467,7 +539,7 @@ function buildIdleButton(m) {
 
 // "Relink" button: the file is already on disk, inside a subfolder of the category. The
 // workflow's loader nodes get their value fixed instead of downloading a second copy.
-function buildRelinkButton(m, st) {
+function buildRelinkButton(m, st, pick) {
   const btn = document.createElement("button");
   btn.className = "cf-mf-relink";
   btn.textContent = "Relink";
@@ -478,7 +550,7 @@ function buildRelinkButton(m, st) {
     return btn;
   }
   btn.title = `Point the loader node(s) of this workflow to the copy you already have:\n`
-    + `${m.relink.value}\n(${m.relink.path})`
+    + `${pick.value}\n(${pick.path})`
     + (st.linked ? `\n${st.linked} of ${st.found} node(s) already point there.` : "");
   btn.addEventListener("click", () => relinkOne(m, btn));
   return btn;
@@ -486,16 +558,65 @@ function buildRelinkButton(m, st) {
 
 // Acknowledgement: the button becomes this pill once the link is done. Rebuilt identically on
 // later openings of the popup, since it is read back from the graph.
-function buildLinkedBadge(m, count, unverified) {
+function buildLinkedBadge(m, count, unverified, pick) {
   const el = document.createElement("span");
   el.className = "cf-mf-relinked-badge";
   el.textContent = `✓ Linked${count > 1 ? " ×" + count : ""}`;
-  el.title = `${count} node(s) point to ${m.relink.value}.`
+  el.title = `${count} node(s) point to ${pick.value}.`
     + `\nSave the workflow to keep the change.`
     + (unverified
       ? `\nThis path wasn't in the node's list yet — refresh node definitions (R) if ComfyUI complains.`
       : "");
   return el;
+}
+
+// Menu of the copies already on disk. Shown only when there is a real choice to make.
+// Without it Relink silently took the first same-size copy, while the destination menu right
+// next to it — which only ever drove downloads — read as though it were the one deciding.
+function buildCopyControl(m, pick) {
+  const cands = relinkCandidates(m);
+  // A single copy is not a choice: showing the path plainly says more than a one-entry menu,
+  // and it was until now only reachable through the button's tooltip.
+  if (cands.length < 2) {
+    const fixed = document.createElement("span");
+    fixed.className = "cf-mf-copyfixed";
+    fixed.textContent = pick.value;
+    fixed.title = pick.path;
+    return fixed;
+  }
+
+  const sel = document.createElement("select");
+  sel.className = "cf-mf-copysel";
+  sel.title = "Which copy already on disk the loader node(s) should point at.";
+  // Keyed by index rather than by path: shorter, and nothing here depends on the value.
+  cands.forEach((c, i) => {
+    const opt = new Option(c.value, String(i));
+    opt.title = `${c.path}\n${fmtSize(c.size)}`;
+    if (c.path === pick.path) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener("change", () => {
+    m._relinkPick = cands[Number(sel.value)] || null;
+    refreshLinkParts(m);
+  });
+  return sel;
+}
+
+// Re-render what depends on WHICH copy is selected: the action column, and the badge that
+// names the copy. The picker itself is left in place — rebuilding it would close the menu the
+// user has just used.
+function refreshLinkParts(m) {
+  const row = rowById.get(m.id);
+  if (!row || row.state !== "idle") return;
+  const pick = relinkPick(m);
+  const st = linkState(m.filename, pick.value);
+  row.actionLink.innerHTML = "";
+  row.actionLink.appendChild(buildLinkAction(m, st, pick));
+  const wrap = row.info.querySelector(".cf-mf-badgewrap");
+  if (wrap) {
+    wrap.innerHTML = buildBadge(m, STATUS_META[m.status] || STATUS_META.missing,
+                                isLinked(st), pick);
+  }
 }
 
 function relinkOne(m, btn) {
@@ -504,27 +625,28 @@ function relinkOne(m, btn) {
   // The visible graph is no longer the analysed one (tab switched, not yet refreshed):
   // writing into it would fix the nodes of the wrong workflow.
   if (state.workflowKey !== currentWorkflowKey()) {
-    flashRow(m.id, "Workflow changed — refresh first.");
+    flashRow(m.id, "Workflow changed — refresh first.", "link");
     return;
   }
   btn.disabled = true;
+  const pick = relinkPick(m);
   let res;
   try {
-    res = relinkModel(m.filename, m.relink.value);
+    res = relinkModel(m.filename, pick.value);
   } catch (e) {
-    flashRow(m.id, "Relink failed: " + (e.message || String(e)));
+    flashRow(m.id, "Relink failed: " + (e.message || String(e)), "link");
     return;
   }
   if (!res.found) {
     // The workflow changed between the render and the click.
-    flashRow(m.id, "No node uses this file.");
+    flashRow(m.id, "No node uses this file.", "link");
     return;
   }
 
   // The button gives way to its acknowledgement, the row turns green.
-  const badge = buildLinkedBadge(m, res.changed + res.already, res.unverified);
+  const badge = buildLinkedBadge(m, res.changed + res.already, res.unverified, pick);
   btn.replaceWith(badge);
-  markRowLinked(row, m);
+  markRowLinked(row, m, pick);
   if (res.wrote) {
     flashLinked(row, badge);
     showSaveHint();
@@ -532,12 +654,12 @@ function relinkOne(m, btn) {
 }
 
 // Row status: "≈ Likely duplicate" becomes "🔗 Linked".
-function markRowLinked(row, m) {
+function markRowLinked(row, m, pick) {
   const badge = row.info.querySelector(".cf-mf-badge");
   if (!badge) return;
   badge.className = "cf-mf-badge cf-mf-badge-ok";
   badge.textContent = "🔗 Linked";
-  badge.title = `This workflow's loader node(s) point to ${m.relink.path}`;
+  badge.title = `This workflow's loader node(s) point to ${pick.path}`;
 }
 
 // A brief spotlight at click time (the pill alone goes unnoticed).
@@ -604,10 +726,10 @@ function buildSubfolderInput(m, subfolders) {
 
 let datalistSeq = 0;
 
-function buildBadge(m, meta, linked) {
-  if (linked && m.relink) {
+function buildBadge(m, meta, linked, pick) {
+  if (linked && pick) {
     return `<span class="cf-mf-badge cf-mf-badge-ok" title="${esc(
-      "This workflow's loader node(s) point to " + m.relink.path)}">🔗 Linked</span>`;
+      "This workflow's loader node(s) point to " + pick.path)}">🔗 Linked</span>`;
   }
   let tip = "";
   if (m.status === "duplicate_same_size" || m.status === "duplicate_diff_size") {
@@ -927,6 +1049,8 @@ function setRowDone(id) {
   row.model._checked = false;
   persistRow(row.model, { checked: false });
   row.action.innerHTML = `<span class="cf-mf-done-badge">✓ Installed</span>`;
+  // The file now resolves under its bare name: the relink line has become meaningless.
+  row.linkLine.hidden = true;
   const badge = row.info.querySelector(".cf-mf-badge");
   if (badge) {
     badge.className = "cf-mf-badge cf-mf-badge-ok";
@@ -935,19 +1059,28 @@ function setRowDone(id) {
   updateSummary();
 }
 
-function flashRow(id, msg) {
+// A transient message, shown IN THE LINE that produced it: a relink refusal next to Relink,
+// a missing destination next to Download. Landing them all in one slot would blame the wrong
+// button.
+function flashRow(id, msg, which = "download") {
   const row = rowById.get(id);
   if (!row) return;
+  const slot = which === "link" ? row.actionLink : row.action;
   const wasState = row.state;
-  row.action.innerHTML = `<span class="cf-mf-row-err">${esc(msg)}</span>`;
+  slot.innerHTML = `<span class="cf-mf-row-err">${esc(msg)}</span>`;
   setTimeout(() => {
     if (row.state !== wasState) return; // a download/success took over
-    row.action.innerHTML = "";
+    slot.innerHTML = "";
     // Restore the state we came from: a row in error must get its Retry back, otherwise the
     // flash message leaves it with no button at all.
-    row.action.append(...(wasState === "error"
-      ? buildErrorActions(row)
-      : buildIdleActions(row.model)));
+    if (which === "link") {
+      const pick = relinkPick(row.model);
+      if (pick) slot.appendChild(buildLinkAction(row.model, null, pick));
+    } else {
+      slot.append(...(wasState === "error"
+        ? buildErrorActions(row)
+        : [buildIdleButton(row.model)]));
+    }
   }, 2500);
 }
 

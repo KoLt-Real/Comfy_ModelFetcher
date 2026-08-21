@@ -242,8 +242,15 @@ def classify(ref: ModelRef, cat: CategoryInfo,
         rp = os.path.realpath(full)
         same_size = (remote_size is not None and size == remote_size)
         entry = {"path": full, "size": size, "same_size": same_size}
-        in_cat = any(is_under(rp, root) for root in cat_roots)
-        (matches_in_cat if in_cat else matches_other).append(entry)
+        if any(is_under(rp, root) for root in cat_roots):
+            # Value a loader widget needs in order to reach THIS copy, so that the popup can
+            # offer every copy rather than only the one picked by ``relink_target``.
+            loc = _relative_in_dirs(full, cat.all_dirs)
+            entry["value"] = loc[1] if loc else None
+            entry["root"] = loc[0] if loc else None
+            matches_in_cat.append(entry)
+        else:
+            matches_other.append(entry)
 
     if matches_in_cat:
         any_same = any(m["same_size"] for m in matches_in_cat)

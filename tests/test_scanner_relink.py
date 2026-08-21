@@ -89,6 +89,21 @@ for n, combo in enumerate(itertools.product([None, RIGHT, WRONG], repeat=len(PLA
             why = "missing while the file is on disk"
         elif usable_root and st != scanner.ST_INSTALLED:
             why = f"usable copy at a root but status {st}"
+        # The popup lets the user pick WHICH copy Relink points at, out of `local_matches`.
+        # That menu is only honest if every copy it lists carries a value that really reaches
+        # it, AND if the automatic choice is one of them — a default absent from the menu
+        # would show a selection that is not what the button does.
+        cands = r["local_matches"]
+        offered = [c for c in cands if remote is None or c["same_size"]]
+        if not why:
+            broken = next((c for c in cands if not c.get("value") or not c.get("root")
+                           or os.path.realpath(os.path.join(c["root"], c["value"]))
+                           != os.path.realpath(c["path"])), None)
+            if broken:
+                why = f"copy with no usable value: {broken['path']}"
+            elif rl and not any(c["value"] == rl["value"] and c["root"] == rl["root"]
+                                for c in offered):
+                why = "the automatic choice is absent from the offered copies"
         if why:
             bad.append((combo, remote, st, rl and rl["value"], why))
 
@@ -97,5 +112,32 @@ for b in bad[:5]:
     print("FAIL", b)
 print(("OK  " if not bad else "FAIL") + f"  no dead-end row ({len(bad)} anomaly/ies)")
 res.append(not bad)
+# --- the case behind the feature: several copies, several subfolders ---------
+# Two copies of the same file in two subfolders of the SAME root: the automatic pick answers
+# for one of them, the menu must show both so the user can overrule it.
+multi = os.path.join(tmp, "multi")
+mk(os.path.join(multi, "Flux", "dual.safetensors"), 100)
+mk(os.path.join(multi, "archive", "dual.safetensors"), 100)
+mk(os.path.join(multi, "old", "dual.safetensors"), 42)
+cat_multi = CategoryInfo(name="checkpoints", known=True, target_dir=multi, all_dirs=[multi])
+r = classify(ModelRef(filename="dual.safetensors", url="u", category="checkpoints"),
+             cat_multi, build_disk_index([multi]), 100)
+values = sorted(c["value"] for c in r["local_matches"])
+offered = sorted(c["value"] for c in r["local_matches"] if c["same_size"])
+print("\n--- several copies in several subfolders ---")
+for label, got, want in (
+    ("every copy is listed", values,
+     ["Flux/dual.safetensors", "archive/dual.safetensors", "old/dual.safetensors"]),
+    # A copy whose size contradicts the source stays out of the menu, for the same reason a
+    # size mismatch never gets a Relink button: it is another version of the model.
+    ("only the same-size copies are offered", offered,
+     ["Flux/dual.safetensors", "archive/dual.safetensors"]),
+    ("the automatic choice is one of them", r["relink"]["value"] in offered, True),
+):
+    ok = got == want
+    print(("OK  " if ok else "FAIL") + f"  {label:38} {got!r}"
+          + ("" if ok else f"   EXPECTED {want!r}"))
+    res.append(ok)
+
 print(f"\n{sum(res)}/{len(res)} cases OK")
 sys.exit(0 if all(res) else 1)
