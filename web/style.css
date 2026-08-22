@@ -1,6 +1,6 @@
-/* ComfyFactory Model Fetcher — bouton topbar + popup */
+/* ComfyFactory Model Fetcher — top-bar button + popup */
 
-/* ---- Bouton topbar ---- */
+/* ---- Top-bar button ---- */
 .cf-mf-topbar-btn {
   display: inline-flex;
   align-items: center;
@@ -40,7 +40,7 @@
   justify-content: center;
   box-shadow: 0 0 0 2px var(--comfy-menu-bg, #1e1e2e);
 }
-/* L'attribut `hidden` doit l'emporter sur le `display:inline-flex` ci-dessus. */
+/* The `hidden` attribute must win over the `display:inline-flex` above. */
 .cf-mf-btn-badge[hidden] { display: none !important; }
 
 /* Floating button (detached from the top bar) and drag/dock visual feedback. */
@@ -64,7 +64,7 @@
 .cf-mf-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10010; /* au-dessus du bouton flottant (10001) : le popup doit tout recouvrir */
+  z-index: 10010; /* above the floating button (10001): the popup must cover everything */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -257,7 +257,7 @@
 }
 .cf-mf-key:hover { background: rgba(255,255,255,0.08); }
 
-/* ---- Groupes ---- */
+/* ---- Groups ---- */
 .cf-mf-group {
   border: 1px solid var(--border-color, #2e2e38);
   border-radius: 10px;
@@ -286,7 +286,7 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- Lignes ---- */
+/* ---- Rows ---- */
 .cf-mf-rows { display: flex; flex-direction: column; }
 .cf-mf-row {
   display: grid;
@@ -310,7 +310,7 @@
 .cf-mf-sub { display: flex; align-items: center; gap: 8px; margin-top: 3px; flex-wrap: wrap; }
 .cf-mf-size { font-size: 11px; color: var(--descrip-text, #8b8b98); }
 
-/* ---- Badges de statut ---- */
+/* ---- Status badges ---- */
 .cf-mf-badge {
   font-size: 10.5px;
   font-weight: 600;
@@ -323,6 +323,9 @@
 .cf-mf-badge-diff { background: rgba(249, 115, 22, 0.16); color: #fb923c; }
 .cf-mf-badge-miss { background: rgba(59, 130, 246, 0.18); color: #93b4ff; }
 .cf-mf-badge-unk  { background: rgba(148, 148, 160, 0.18); color: #b6b6c2; }
+/* Repaint handle for the badge, never a box: as a flex item it would swallow the gap of
+   .cf-mf-sub and add 3px to every row. */
+.cf-mf-badgewrap { display: contents; }
 .cf-mf-other {
   font-size: 10px; color: #8b8b98; cursor: help;
   border-bottom: 1px dotted #8b8b98;
@@ -367,7 +370,6 @@
 .cf-mf-action-link { display: flex; align-items: center; justify-content: flex-end; }
 
 /* ---- Destination ---- */
-.cf-mf-dest { display: flex; gap: 6px; align-items: center; }
 .cf-mf-catsel {
   max-width: 190px;
   padding: 4px 8px;
@@ -384,7 +386,6 @@
    mirror the relink line above, but it eats ~90px from the column holding the FILENAME, and a
    truncated filename costs more than the symmetry is worth. */
 .cf-mf-destcol { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.cf-mf-dest { min-width: 0; }
 .cf-mf-locsel {
   max-width: 200px;
   /* A long path must neither widen the column nor spill over the buttons: it is truncated
@@ -405,6 +406,9 @@
 
 /* Which copy Relink points at, when several sit in different subfolders */
 .cf-mf-copyfixed {
+  /* Bounded like the select it stands in for: unbounded, it grows to max-content and starves
+     the minmax(0, 1fr) column holding the FILENAME — the overflow rules below never fire. */
+  max-width: 260px;
   font-size: 11px;
   color: var(--descrip-text, #9b9ba8);
   min-width: 0;
@@ -448,7 +452,7 @@
 /* New subfolder (to be created): green outline to make the creation obvious */
 .cf-mf-subinput-new { border-color: #4ade80; }
 
-/* ---- Action / progression ---- */
+/* ---- Action / progress ---- */
 .cf-mf-action { display: flex; align-items: center; gap: 8px; min-width: 130px; justify-content: flex-end; }
 .cf-mf-dl-one {
   padding: 5px 12px;

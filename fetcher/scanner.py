@@ -186,29 +186,24 @@ def list_locations(ci: CategoryInfo) -> list[dict]:
     return locations
 
 
-def _relative_in_dirs(path: str, dirs: list[str]) -> tuple[str, str] | None:
-    """(root folder, POSIX relative path) of the first dir in ``dirs`` containing ``path``."""
-    rp = os.path.realpath(path)
-    for d in dirs:
-        root = os.path.realpath(d)
-        if is_under(rp, root):
-            return d, os.path.relpath(rp, root).replace(os.sep, "/")
-    return None
-
-
-def _at_dir_root(path: str, dirs: list[str]) -> bool:
-    """Does the file sit at the ROOT of one of the folders, hence resolve by its bare name?
+def _at_dir_root(match: dict) -> bool:
+    """Does the copy sit at the ROOT of its folder, hence resolve by its bare name?
 
     ComfyUI searches EVERY folder registered for the category. That is what makes "installed"
     and "nothing to relink" equivalent: both decisions go through this one predicate,
     otherwise a row could read "likely duplicate" with no Relink button.
+
+    Reads the value ``classify`` resolved rather than walking the folders again: one answer,
+    one place, and no second opinion possible.
     """
-    loc = _relative_in_dirs(path, dirs)
-    return loc is not None and "/" not in loc[1]
+    return "/" not in match["value"]
 
 
-def relink_target(matches: list[dict], cat: CategoryInfo) -> dict | None:
+def relink_target(matches: list[dict]) -> dict | None:
     """Value to give the loader node's widget so it points at the copy already on disk.
+
+    ``matches`` must be ``classify``'s IN-CATEGORY list: only those entries carry the
+    ``value``/``root`` this reads (``other_category_matches`` entries do not).
 
     ComfyUI lists a category's models as paths relative to each of its folders
     (``Flux/model.safetensors``); templates, on the other hand, point at the root. A file
@@ -216,14 +211,9 @@ def relink_target(matches: list[dict], cat: CategoryInfo) -> dict | None:
     fix, ``None`` is returned.
     """
     best = next((m for m in matches if m["same_size"]), matches[0] if matches else None)
-    if best is None:
+    if best is None or _at_dir_root(best):
         return None
-    if _at_dir_root(best["path"], cat.all_dirs):
-        return None
-    loc = _relative_in_dirs(best["path"], cat.all_dirs)
-    if loc is None:
-        return None
-    return {"value": loc[1], "path": best["path"], "root": loc[0]}
+    return {"value": best["value"], "path": best["path"], "root": best["root"]}
 
 
 def classify(ref: ModelRef, cat: CategoryInfo,
@@ -242,15 +232,26 @@ def classify(ref: ModelRef, cat: CategoryInfo,
         rp = os.path.realpath(full)
         same_size = (remote_size is not None and size == remote_size)
         entry = {"path": full, "size": size, "same_size": same_size}
-        if any(is_under(rp, root) for root in cat_roots):
-            # Value a loader widget needs in order to reach THIS copy, so that the popup can
-            # offer every copy rather than only the one picked by ``relink_target``.
-            loc = _relative_in_dirs(full, cat.all_dirs)
-            entry["value"] = loc[1] if loc else None
-            entry["root"] = loc[0] if loc else None
-            matches_in_cat.append(entry)
-        else:
+        # The loop deciding "is this copy in the category?" already finds the folder holding
+        # it, which is exactly what the loader value is relative to: taking it here spares one
+        # realpath() per folder per copy. That matters — the roots are often network shares and
+        # /cf_mf/count reruns this whole classification on every workflow change.
+        i = next((i for i, root in enumerate(cat_roots) if is_under(rp, root)), None)
+        if i is None:
             matches_other.append(entry)
+            continue
+        entry["value"] = os.path.relpath(rp, cat_roots[i]).replace(os.sep, "/")
+        entry["root"] = cat.all_dirs[i]
+        matches_in_cat.append(entry)
+
+    # Disk order is os.scandir order: neither sorted nor stable across filesystems. Leaving it
+    # alone would make the copy pre-selected in the popup — and the one kept when two copies
+    # share a widget value — differ between two machines holding identical trees. Case-folded,
+    # because byte order puts every uppercase folder before every lowercase one ("Flux" before
+    # "archive"), which is not the alphabetical order the README promises nor the order a user
+    # scanning the menu reads it in.
+    matches_in_cat.sort(key=lambda m: (m["value"].casefold(), m["value"]))
+    matches_other.sort(key=lambda m: (m["path"].casefold(), m["path"]))
 
     if matches_in_cat:
         any_same = any(m["same_size"] for m in matches_in_cat)
@@ -262,7 +263,7 @@ def classify(ref: ModelRef, cat: CategoryInfo,
         # Copies of a different size do not count: the bare name would resolve to another
         # version of the file, and that really is a duplicate to relink to the right copy.
         usable = [m for m in matches_in_cat if remote_size is None or m["same_size"]]
-        if any(_at_dir_root(m["path"], cat.all_dirs) for m in usable):
+        if any(_at_dir_root(m) for m in usable):
             status = ST_INSTALLED
         elif remote_size is not None and not any_same:
             status = ST_DUP_DIFF
@@ -279,7 +280,7 @@ def classify(ref: ModelRef, cat: CategoryInfo,
         "other_category_matches": matches_other,
         # Only offered for a same-size duplicate: on a different size the local file is
         # probably another version, and pointing at it would be wrong.
-        "relink": relink_target(matches_in_cat, cat) if status == ST_DUP_SAME else None,
+        "relink": relink_target(matches_in_cat) if status == ST_DUP_SAME else None,
     }
 
 

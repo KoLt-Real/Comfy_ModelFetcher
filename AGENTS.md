@@ -107,7 +107,7 @@ Python and JS tests need nothing beyond what ComfyUI already provides; the brows
 | `tests/test_hf_delegation.py` | huggingface_hub delegation and its fallback, both paths |
 | `tests/test_routes.py` | handlers stay off the event loop; response contract |
 | `tests/js/relink.test.js` | widget matching, subgraphs, promoted-widget double counting |
-| `tests/e2e/test_popup.py` | Relink flow, the copy picker, per-workflow state, error/flash rows |
+| `tests/e2e/test_popup.py` | Relink flow, the copy picker, per-workflow state, error/flash rows, and the relink line's independence from the download state machine |
 | `tests/e2e/test_token_panel.py` | token panel: save, remove, env-vs-file |
 | `tests/e2e/test_location_labels.py` | location labels stay unique and short, for the destination menu and for the offered copies (roots on different disks included); select cannot overflow the row |
 | `tests/test_scanner_output_dirs.py` | `output/<category>` stays scanned but never becomes a destination |
@@ -123,6 +123,19 @@ run time — there is no duplicated copy to keep in sync.
 - ComfyUI lists model files **relative to each category root**, so a file at the root of an
   *extra* path is reachable by its bare name: no relink is needed there, only for real
   subfolders.
+- **Case is never folded when comparing a widget value.** Two copies of one model can differ by
+  the case of a folder alone (`Minimax/` against `MiniMax/`), and on a case-sensitive filesystem
+  those are two different files. `relink.js` keeps `slashed()` (separators only) for every
+  "is this the value?" question; `norm()` (case folded, both sides) decides only *known-ness* —
+  whether a combo list proves the widget belongs to the value's category — and what gets
+  WRITTEN is always the exact spelling of the pick, never a variant found in the list. Folding
+  the comparisons made Relink write the copy the user had not picked while the tooltip promised
+  theirs; folding only one side of the known-ness test made it unpassable for mixed-case values,
+  which silently disabled the cross-category filter. `tests/js/relink.test.js` guards both.
+- **`classify()` sorts its matches.** `os.scandir` order is neither sorted nor stable across
+  filesystems, and it decides which copy the popup pre-selects and which of two copies sharing a
+  widget value survives the dedup — two machines with identical trees would otherwise relink
+  different files on the same click.
 - Two copies sharing the same **relative path** under two different roots are one and the same
   choice: a widget value is resolved against every root in order, so both write the same string
   and load the same file — `get_filename_list()` deduplicates them for that reason. The copy

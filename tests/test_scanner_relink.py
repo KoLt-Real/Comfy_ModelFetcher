@@ -139,5 +139,24 @@ for label, got, want in (
           + ("" if ok else f"   EXPECTED {want!r}"))
     res.append(ok)
 
+# --- the automatic pick must not depend on the filesystem --------------------
+# os.scandir order is neither sorted nor stable across filesystems. Left alone it decided both
+# which copy the popup pre-selects and which of two copies sharing a widget value survives:
+# two machines with identical trees would relink different files on the same click.
+# "Zeta" and "alpha" on purpose: byte order would put Zeta first, alphabetical order — what
+# the README documents and what a reader of the menu expects — puts alpha first.
+order = os.path.join(tmp, "order")
+for sub in ("zzz", "aaa", "Zeta", "alpha", "mmm"):
+    mk(os.path.join(order, sub, "ord.safetensors"), 100)
+cat_ord = CategoryInfo(name="checkpoints", known=True, target_dir=order, all_dirs=[order])
+got = [c["value"] for c in classify(
+    ModelRef(filename="ord.safetensors", url="u", category="checkpoints"),
+    cat_ord, build_disk_index([order]), 100)["local_matches"]]
+walked = [e.name for e in os.scandir(order)]
+ok = got == sorted(got, key=str.casefold)
+print("\n--- order independent of the filesystem ---")
+print(("OK  " if ok else "FAIL") + f"  copies sorted {got!r}  (disk order was {walked!r})")
+res.append(ok)
+
 print(f"\n{sum(res)}/{len(res)} cases OK")
 sys.exit(0 if all(res) else 1)

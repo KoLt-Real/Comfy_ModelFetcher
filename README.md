@@ -64,7 +64,8 @@ Each row carries its two decisions on separate lines — **Link to** … *Relink
 
 **Several copies on disk?** When the same filename sits in more than one subfolder, **Link to**
 becomes a menu and Relink points where you tell it to. It opens on the copy the workflow
-already uses, falling back to the same-size one found first, and only ever lists real choices:
+already uses, falling back to the first same-size one in alphabetical order, and only ever
+lists real choices:
 copies whose size contradicts the source are left out — those are another version of the model,
 which is also why a size mismatch never gets a Relink button at all — and copies sharing a
 relative path under two roots count once, since ComfyUI would load the same file either way.

@@ -1,39 +1,46 @@
 # Contributing
 
 Bug reports and patches are welcome. This package downloads files onto your disk from
-URLs it found in a workflow note, so two invariants below are security ones — please
-read them before your first patch.
+URLs it found in a workflow note, so it carries real security invariants — please read
+them before your first patch.
 
 ## Invariants
 
-1. **The HuggingFace token only ever goes to HuggingFace hosts.** `hf_token.auth_headers`
-   is the single place in the codebase that builds an `Authorization` header, and it is
-   host-checked. URLs come from workflow notes, i.e. from an untrusted source: a note
-   authored by someone else must never be able to make your token leave for their server.
-   Do not add a second header-building path.
-2. **"Installed" means the loader resolves the bare filename**, and that has to stay the
-   exact negation of "this one needs a relink". If the two drift apart, a row can end up
-   labelled "probable duplicate" with no button to resolve it — a dead end for the user.
-3. **This package registers no nodes.** It adds a top-bar button and the `/cf_mf` routes,
-   nothing else, and it steps aside on an import error rather than preventing ComfyUI from
-   starting. Keep it that way.
+[`AGENTS.md`](AGENTS.md) is the reference: it lists every invariant, with the code that
+enforces it and the test that guards it, and every entry is there because the thing it
+describes went wrong once. Nothing here overrides it. The two that are security
+invariants deserve the emphasis:
 
-`AGENTS.md` holds the rest and is the reference; every entry is there because the thing it
-describes went wrong once.
+1. **The token stays on a leash** (AGENTS.md invariant 1). URLs come from workflow
+   notes, i.e. from an untrusted source: a note authored by someone else must never be
+   able to make your token leave for their server. `hf_token.auth_headers(url)` is the
+   one place that builds an `Authorization` header for *note-supplied URLs*, and it
+   returns `{}` for any non-HuggingFace host — the token-validation path
+   (`hf_token.validate`, which honours the operator-controlled `HF_ENDPOINT`) is the
+   deliberate exception, not a template to copy.
+2. **Downloads stay under the models directory** (AGENTS.md invariants 2 and 3).
+   Category names and subfolders also come from notes or from the client:
+   `scanner.resolve_category()` strips traversal segments, `routes._safe_join()`
+   re-checks containment, and `base_dir` must already be registered for the category.
+   Both layers must stay — `tests/test_security.py` covers them.
 
 ## Running the tests
 
 ```bash
-./tests/run_all.sh                # Python + JS
-./tests/run_all.sh --strict       # what CI should run: a skipped test fails the suite
-python3 tests/e2e/test_popup.py   # browser tests need playwright
+./tests/run_all.sh                # the whole suite: Python + JS + browser (Playwright)
+./tests/run_all.sh --strict       # any skipped test fails the run — use this before a PR
 ```
 
-A skipped test is not a passing test. The suite skips cleanly when `aiohttp` or
-`playwright` is missing, and it now says so out loud — if you see a skip line, that part
-of the code was **not** covered by your run. Use `--strict` before opening a PR.
+The Python and JS tests need nothing beyond `python3`, `node`, and what ComfyUI already
+ships. The browser tests additionally need
+`pip install playwright && playwright install chromium`; without them the suite skips
+that tier and says so out loud. A skipped test is not a passing test — `--strict` turns
+any skip into a failure, which is why it is the pre-PR command. There is no CI on this
+repository yet: that check runs only if you run it.
 
 ## Style
 
-Everything is in **English** — code, comments, docstrings, test names, log messages,
-commit messages. Match the surrounding code rather than the style you would pick.
+See the Conventions section of [`AGENTS.md`](AGENTS.md). The short version: everything
+is in English — code, comments, docstrings, test names, UI strings, log messages,
+commit messages — and changes match the surrounding style rather than the style you
+would pick.

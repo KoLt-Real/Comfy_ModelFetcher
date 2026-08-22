@@ -100,6 +100,28 @@ with sync_playwright() as pw:
     ck("no (1)/(2) fallback leaking into a label",
        not any("(1)" in o or "(2)" in o for o in out), out)
 
+    # Same folder, filenames differing only in case: the folder alone would print twice.
+    out = copies(pg, [("/o/models/unet", "Flux/Model.safetensors"),
+                      ("/o/models/unet", "Flux/model.safetensors")])
+    ck("same folder, case-only difference: labels stay distinct", len(set(out)) == 2, out)
+
+    # Two deep folders sharing BOTH ends: middle-elision maps them to the same string, and the
+    # filename fallback cannot break the tie (same file). The cascade must fall back to the
+    # full folders — over budget, but distinct.
+    out = copies(pg, [("/o/models/ckpt", "SDXL/AnimeStyle/Portrait/x.st"),
+                      ("/o/models/ckpt", "SDXL/PhotoRealV2/Portrait/x.st")])
+    ck("elision collision: labels still distinct", len(set(out)) == 2, out)
+    ck("elision collision: the differing middle is shown",
+       any("AnimeStyle" in o for o in out) and any("PhotoRealV2" in o for o in out), out)
+
+    # A deep tree whose branches differ at the END: a CSS truncation would eat exactly that.
+    deep = "SDXL/Realistic/Photography/Portrait/"
+    out = copies(pg, [("/o/models/ckpt", deep + "v1/x.st"), ("/o/models/ckpt", deep + "v2/x.st")])
+    ck("deep folders: distinct once elided", len(set(out)) == 2, out)
+    ck("deep folders: short enough that the browser never truncates",
+       all(len(o) <= 29 for o in out), out)
+    print("        deep folders:", out)
+
     # ---- UI: the select must not overflow ------------------------------------
     long_dirs = [{"dir": r"D:\ComfyUI_MAIN\models\text_encoders", "exists": True,
                   "is_default": True, "subfolders": ["", "Flux"]},

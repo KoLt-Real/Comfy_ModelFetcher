@@ -6,7 +6,17 @@
 # any skip fail the run, so a missing dependency can never read as a green suite.
 set -u
 strict=0
-[ "${1:-}" = "--strict" ] && strict=1
+# An unrecognised argument must be an error, not a silent non-strict run: a typo like
+# --stict exiting 0 with skips is exactly the "quietly never ran" outcome --strict exists
+# to prevent.
+if [ $# -gt 0 ]; then
+  if [ "$1" = "--strict" ] && [ $# -eq 1 ]; then
+    strict=1
+  else
+    echo "usage: $0 [--strict]" >&2
+    exit 2
+  fi
+fi
 cd "$(dirname "$0")/.."
 pass=0; fail=0; skip=0
 
@@ -28,11 +38,16 @@ echo "JavaScript"
 run "relink.test.js" node tests/js/relink.test.js
 
 echo "Browser (Playwright)"
-if python3 -c "import playwright" 2>/dev/null; then
+# Probed through sync_api, not the bare package: `import playwright` succeeds even when
+# greenlet (its real dependency) is unusable, which turned the promised clean skip into
+# three FAILs. The browser binary itself is still only checked at launch.
+if python3 -c "import playwright.sync_api" 2>/dev/null; then
   for t in tests/e2e/test_*.py; do run "$(basename "$t")" python3 "$t"; done
 else
-  echo "  – playwright missing, E2E skipped (pip install playwright && playwright install chromium)"
-  skip=$((skip+1))
+  for t in tests/e2e/test_*.py; do
+    echo "  – $(basename "$t") : skipped, playwright missing (pip install playwright && playwright install chromium)"
+    skip=$((skip+1))
+  done
 fi
 
 echo

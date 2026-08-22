@@ -265,6 +265,9 @@ with sync_playwright() as pw:
         {"path": "/extra/checkpoints/Flux/flux1-dev.safetensors", "size": 100,
          "same_size": True, "value": "Flux/flux1-dev.safetensors", "root": "/extra/checkpoints"},
     ]
+    # classify() only emits value/root for copies under the category's registered dirs: the
+    # fixture must declare the extra root too, or it encodes a payload the server cannot send.
+    MULTI["categories"]["checkpoints"]["all_dirs"] = ["/m/checkpoints", "/extra/checkpoints"]
     page.evaluate("(p) => { window.api.payload = p; }", MULTI)
     page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-P.json'; }")
     page.evaluate(GRAPH_A)
@@ -316,16 +319,27 @@ with sync_playwright() as pw:
     ], "relink": {"value": f"Minimax/{NAME}",
                   "path": f"/opt/01_ComfyUI/models/unet/Minimax/{NAME}",
                   "root": "/opt/01_ComfyUI/models/unet"}}]
+    # list_locations() always returns at least one location for a known category — an empty
+    # list would be a payload the server cannot produce.
     DISKS["categories"] = {"diffusion_models": {"target_dir": "/opt/01_ComfyUI/models/unet",
         "all_dirs": ["/opt/01_ComfyUI/models/unet", "/mnt/M/ComfyUI/models/diffusion_models"],
-        "known": True, "subfolders": [""], "locations": []}}
+        "known": True, "subfolders": [""], "locations": [
+            {"dir": "/opt/01_ComfyUI/models/unet", "exists": True, "is_default": True,
+             "subfolders": ["", "Minimax"]},
+            {"dir": "/mnt/M/ComfyUI/models/diffusion_models", "exists": True,
+             "is_default": False, "subfolders": ["", "MiniMax"]}]}}
     MX = "diffusion_models/" + NAME
     page.evaluate("(p) => { window.api.payload = p; }", DISKS)
     page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-M.json'; }")
     page.evaluate("""() => { window.app.graph = { _nodes: [{ type: "UNETLoader",
       widgets: [{ name: "unet_name",
                   value: "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
-                  options: { values: [] } }], setDirtyCanvas() {} }], setDirtyCanvas() {} }; }""")
+                  // What ComfyUI really lists when both roots are registered. An empty list
+                  // made the assertion below unable to fail: with nothing to match, the picked
+                  // value was written by default instead of being looked up.
+                  options: { values: ["Minimax/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+                                      "MiniMax/minimax_h3_ref2va_pruned_int8_convrot.safetensors"] } }],
+      setDirtyCanvas() {} }], setDirtyCanvas() {} }; }""")
     page.evaluate("() => window.popup.openPopup()")
     page.wait_for_selector(".cf-mf-row")
 
@@ -349,6 +363,89 @@ with sync_playwright() as pw:
     row(page, MX).locator(".cf-mf-relink").click()
     check("the copy chosen on the other disk is the one written",
           page.evaluate("() => window.app.graph._nodes[0].widgets[0].value") == "MiniMax/" + NAME)
+
+    # ---- 12. The relink line has a life of its own -------------------------
+    # It now sits beside the download line instead of sharing its slot, so it must not inherit
+    # the download's state machine — nor be erased by it.
+    page.evaluate("(p) => { window.api.payload = p; }", MULTI)
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-L.json'; }")
+    page.evaluate(GRAPH_A)
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+
+    # (a) a pick made while a download runs must still reach the button
+    page.evaluate("(id) => window.api.emit('cf_mf.progress', {id, downloaded: 1, total: 9})", FLUX)
+    row(page, FLUX).locator(".cf-mf-copysel").select_option(label="archive")
+    check("a copy chosen mid-download still reaches the button",
+          "archive/flux1-dev.safetensors"
+          in (row(page, FLUX).locator(".cf-mf-relink").get_attribute("title") or ""),
+          row(page, FLUX).locator(".cf-mf-relink").get_attribute("title"))
+
+    # (b) a flash on the relink line, then a download: the button must come back
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-Z.json'; }")
+    row(page, FLUX).locator(".cf-mf-relink").click()          # -> "Workflow changed"
+    page.evaluate("(id) => window.api.emit('cf_mf.progress', {id, downloaded: 1, total: 9})", FLUX)
+    page.wait_for_timeout(2900)
+    check("a download during the flash does not strand the message",
+          row(page, FLUX).locator(".cf-mf-relink").count() == 1
+          and "Workflow changed" not in row(page, FLUX).locator(".cf-mf-action-link").inner_text(),
+          row(page, FLUX).locator(".cf-mf-action-link").inner_text())
+
+    # (b2) a fresher paint owns the slot: a "Linked" badge earned during the flash window must
+    # not be clobbered when the stale timer fires. Analysed on L, flashed while on Y, back on L.
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-L.json'; }")
+    page.evaluate(GRAPH_A)
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-Y.json'; }")
+    row(page, FLUX).locator(".cf-mf-relink").click()          # -> flash on the link line
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-L.json'; }")
+    row(page, FLUX).locator(".cf-mf-copysel").select_option(label="archive")  # repaints the slot
+    row(page, FLUX).locator(".cf-mf-relink").click()          # -> ✓ Linked badge
+    # Third tab BEFORE the stale timer fires: its mismatch branch must not repaint over the
+    # badge — the timer only ever cleans up its own message.
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-T.json'; }")
+    page.wait_for_timeout(2900)                               # let the stale timer fire
+    check("a Linked badge earned during the flash window survives the timer",
+          row(page, FLUX).locator(".cf-mf-relinked-badge").count() == 1
+          and row(page, FLUX).locator(".cf-mf-relink").count() == 0,
+          row(page, FLUX).locator(".cf-mf-action-link").inner_text())
+
+    # (c) downloading INTO A SUBFOLDER leaves the loaders just as broken: the line must stay
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-S.json'; }")
+    page.evaluate(GRAPH_A)
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+    row(page, FLUX).locator(".cf-mf-subinput").fill("Flux")
+    row(page, FLUX).locator("button.cf-mf-dl-one").click()   # job posted with subfolder=Flux
+    # The field stays editable during the download; what the user types afterwards must not
+    # change where the finished job actually landed.
+    row(page, FLUX).locator(".cf-mf-subinput").fill("")
+    page.evaluate("(id) => window.api.emit('cf_mf.done', {id, path:'/m/checkpoints/Flux/x'})", FLUX)
+    check("installed in a subfolder: the relink line survives",
+          row(page, FLUX).locator(".cf-mf-copysel").is_visible())
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+    row(page, DL).locator(".cf-mf-subinput").fill("")
+    row(page, DL).locator("button.cf-mf-dl-one").click()     # job posted at the root
+    row(page, DL).locator(".cf-mf-subinput").fill("Flux")    # edited after: irrelevant
+    page.evaluate("(id) => window.api.emit('cf_mf.done', {id, path:'/m/checkpoints/x'})", DL)
+    check("installed at the root: nothing left to relink",
+          row(page, DL).locator(".cf-mf-copysel").count() == 0)
+
+    # (d) an un-applied pick must survive a re-analysis, like every other row choice
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-K.json'; }")
+    page.evaluate(GRAPH_A)
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+    row(page, FLUX).locator(".cf-mf-copysel").select_option(label="archive")
+    page.evaluate("() => window.popup.openPopup()")        # ↻ Refresh, token save, tab switch…
+    page.wait_for_selector(".cf-mf-row")
+    check("an un-applied pick survives a re-analysis",
+          row(page, FLUX).locator(".cf-mf-copysel")
+          .evaluate("el => el.selectedOptions[0].textContent") == "archive")
 
     browser.close()
 

@@ -1,6 +1,6 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
-import { linkState, relinkModel } from "./relink.js";
+import { linkState, linkedAmong, relinkModel } from "./relink.js";
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -58,6 +58,15 @@ function prefsFor(key) {
 function persistRow(m, patch) {
   const prefs = prefsFor(state.workflowKey);
   prefs.models[m.id] = { ...(prefs.models[m.id] || {}), ...patch };
+}
+
+// A remembered copy is only reused while it is still one of the copies on offer. Without this
+// the pick was the one row choice NOT surviving a re-analysis — a refresh, a tab switch or a
+// token save — and the menu snapped back to the automatic copy with no signal, while the tick,
+// the location and the subfolder beside it all held.
+function validPick(m, value) {
+  if (!value) return null;
+  return relinkCandidates(m).find((c) => c.value === value) || null;
 }
 
 // A remembered location is only reused while it still belongs to the category's locations
@@ -141,6 +150,12 @@ export async function openPopup(notes) {
         category_known: m.category_known || !!pref.dlCategory,
         _subfolder: pref.subfolder ?? "",
         _baseDir: validBaseDir(m, pref.baseDir),  // "" = the default location
+        // Remembered by value, not by object: every analysis rebuilds these, and a copy gone
+        // from disk must not stay selected.
+        _relinkPick: validPick(m, pref.relinkValue),
+        // Same persistence as the pick: a re-analysis rebuilds these objects, and a job posted
+        // before it must still be judged on ITS subfolder when its done event lands after.
+        _queuedSubfolder: pref.queuedSubfolder,
         _dlCategory: pref.dlCategory ?? (m.category || null),
         _checked: pref.checked,                   // undefined = the default tick
       };
@@ -512,13 +527,13 @@ function relinkPick(m) {
   if (m._relinkPick) return m._relinkPick;
   const cands = relinkCandidates(m);
   if (cands.length < 2) return m.relink;
-  return cands.find((c) => isLinked(linkState(m.filename, c.value))) || m.relink;
+  const linked = linkedAmong(m.filename, cands.map((c) => c.value));
+  return cands.find((c) => c.value === linked) || m.relink;
 }
 
 // The relink line's button, or the pill acknowledging it is already done. Always rebuilt
 // through these functions: restoring saved innerHTML would lose the listeners (a dead button).
-function buildLinkAction(m, link, pick) {
-  const st = link || linkState(m.filename, pick.value);
+function buildLinkAction(m, st, pick) {
   return isLinked(st) ? buildLinkedBadge(m, st.linked, false, pick)
                       : buildRelinkButton(m, st, pick);
 }
@@ -592,13 +607,42 @@ export function copyLabels(cands) {
     const labels = locationLabels(roots);
     named = new Map(roots.map((r, i) => [r, labels[i]]));
   }
-  return cands.map((c) => {
+  const distinct = (arr) => new Set(arr).size === arr.length;
+  const compose = (folderOf) => cands.map((c) => {
     const cut = c.value.lastIndexOf("/");
     // A copy at the root of a folder would resolve by its bare name, so it never reaches this
     // menu; the guard is there so a malformed value degrades to something readable.
-    const folder = cut > 0 ? c.value.slice(0, cut) : c.value;
+    const folder = folderOf(cut > 0 ? c.value.slice(0, cut) : c.value);
     return named ? `${named.get(c.root)} · ${folder}` : folder;
   });
+  // Escalate until every RENDERED label is unique — a menu with two identical entries is the
+  // regression this whole function exists to kill, so no step is allowed to reintroduce one:
+  // 1. elided folders (the normal case);
+  // 2. elision collided (two deep folders sharing both ends) → full folders, over budget but
+  //    distinct — a truncated-but-tellable label beats a tidy ambiguous one;
+  // 3. identical folders (filenames differing by case) → append the filename;
+  // 4. absolute net, same shape as locationLabels' own.
+  let labels = compose(elideFolder);
+  if (!distinct(labels)) labels = compose((f) => f);
+  if (!distinct(labels)) {
+    labels = cands.map((c, i) => `${labels[i]} · ${c.value.slice(c.value.lastIndexOf("/") + 1)}`);
+  }
+  if (!distinct(labels)) labels = labels.map((l, i) => `${l} (${i + 1})`);
+  return labels;
+}
+
+// Keep both ends, drop the middle. The select truncates with CSS, which eats the TAIL — the
+// half that tells two sibling folders apart ("…/Portrait/v1" against "…/Portrait/v2"). Staying
+// under the budget means the browser never has to truncate at all.
+function elideFolder(folder) {
+  if (folder.length <= LABEL_MAX_CHARS) return folder;
+  const parts = folder.split("/");
+  if (parts.length >= 3) {
+    const short = [parts[0], "…", parts[parts.length - 1]].join("/");
+    if (short.length <= LABEL_MAX_CHARS) return short;
+  }
+  const keep = Math.floor((LABEL_MAX_CHARS - 1) / 2);
+  return folder.slice(0, keep) + "…" + folder.slice(-keep);
 }
 
 function buildCopyControl(m, pick) {
@@ -626,6 +670,7 @@ function buildCopyControl(m, pick) {
   });
   sel.addEventListener("change", () => {
     m._relinkPick = cands[Number(sel.value)] || null;
+    persistRow(m, { relinkValue: m._relinkPick?.value || "" });
     refreshLinkParts(m);
   });
   return sel;
@@ -636,7 +681,14 @@ function buildCopyControl(m, pick) {
 // user has just used.
 function refreshLinkParts(m) {
   const row = rowById.get(m.id);
-  if (!row || row.state !== "idle") return;
+  if (!row || row.linkLine.hidden) return;
+  // Guarded on the LINE, not on row.state: that one describes the download slot, and a running
+  // download says nothing about whether this row can still be relinked.
+  //
+  // The workflow check is the one relinkOne() makes: after a tab switch the popup keeps showing
+  // the previous workflow's rows until the re-analysis lands (main.js re-opens on a timer), and
+  // reading the visible graph meanwhile would report another workflow's links as this row's.
+  if (state.workflowKey !== currentWorkflowKey()) return;
   const pick = relinkPick(m);
   const st = linkState(m.filename, pick.value);
   row.actionLink.innerHTML = "";
@@ -945,12 +997,17 @@ async function toggleTokenPanel() {
 // Downloads
 // ---------------------------------------------------------------------------
 function jobFor(m) {
+  // Snapshot of the subfolder the job is actually posted with. The input stays editable while
+  // the download runs, so the live _subfolder may say something else by the time the job
+  // finishes — and setRowDone must reason about where the file LANDED, not about the field.
+  m._queuedSubfolder = m._subfolder || "";
+  persistRow(m, { queuedSubfolder: m._queuedSubfolder });
   return {
     id: m.id,
     url: m.url,
     filename: m.filename,
     category: m._dlCategory || m.category,
-    subfolder: m._subfolder || "",
+    subfolder: m._queuedSubfolder,
     base_dir: m._baseDir || "",
   };
 }
@@ -1078,8 +1135,15 @@ function setRowDone(id) {
   row.model._checked = false;
   persistRow(row.model, { checked: false });
   row.action.innerHTML = `<span class="cf-mf-done-badge">✓ Installed</span>`;
-  // The file now resolves under its bare name: the relink line has become meaningless.
-  row.linkLine.hidden = true;
+  // Only a file landing at the ROOT of its folder resolves under its bare name. Downloaded
+  // into a subfolder, the loader nodes stay just as broken as before — hiding the relink line
+  // there would remove the only control that fixes them. Judged on the subfolder the job was
+  // POSTED with (snapshotted by jobFor), not on the live input, which the user may have edited
+  // while the download ran. Never un-hides: a row that had nothing to relink still has nothing.
+  // A done with no snapshot means the job predates this popup session entirely (resync after
+  // a reload): the live field is then the only information there is.
+  const sub = row.model._queuedSubfolder ?? row.model._subfolder;
+  if (!sub) row.linkLine.hidden = true;
   const badge = row.info.querySelector(".cf-mf-badge");
   if (badge) {
     badge.className = "cf-mf-badge cf-mf-badge-ok";
@@ -1096,20 +1160,45 @@ function flashRow(id, msg, which = "download") {
   if (!row) return;
   const slot = which === "link" ? row.actionLink : row.action;
   const wasState = row.state;
-  slot.innerHTML = `<span class="cf-mf-row-err">${esc(msg)}</span>`;
+  const flash = document.createElement("span");
+  flash.className = "cf-mf-row-err";
+  flash.textContent = msg;
+  slot.innerHTML = "";
+  slot.appendChild(flash);
   setTimeout(() => {
+    // Whatever painted over the message is fresher than this timer: a new render after a
+    // re-analysis, a copy-menu change, a "✓ Linked" badge from a successful relink. All of
+    // them disconnect our flash element, and repainting from here would clobber current
+    // content with data captured 2.5 s ago — this timer only ever cleans up its own message.
+    if (!flash.isConnected) return;
+    // The relink line has no state machine: row.state describes the DOWNLOAD slot only, and
+    // guarding this restore on it stranded the message here — Relink button and all — as soon
+    // as a download started within the delay. Both buttons are visible at once now, so that
+    // was one click away.
+    if (which === "link") {
+      if (state.workflowKey === currentWorkflowKey()) { refreshLinkParts(row.model); return; }
+      // Workflow mismatched: nothing may be read from the graph, but a red message with no
+      // button under it is a dead end — the re-analysis that normally follows a tab switch is
+      // not guaranteed to land. Restore the button with the copy the MENU displays (pure DOM,
+      // no graph read): the select still shows what the last valid render resolved, whereas
+      // `_relinkPick || relink` skipped the graph-derived tier and could promise a copy the
+      // picker visibly does not show. The click re-checks the workflow and refuses again if
+      // nothing has moved.
+      const sel = row.info.querySelector(".cf-mf-copysel");
+      const cands = relinkCandidates(row.model);
+      const pick = (sel && cands[Number(sel.value)])
+        || row.model._relinkPick || row.model.relink;
+      slot.innerHTML = "";
+      if (pick) slot.appendChild(buildRelinkButton(row.model, { found: 1, linked: 0 }, pick));
+      return;
+    }
     if (row.state !== wasState) return; // a download/success took over
     slot.innerHTML = "";
     // Restore the state we came from: a row in error must get its Retry back, otherwise the
     // flash message leaves it with no button at all.
-    if (which === "link") {
-      const pick = relinkPick(row.model);
-      if (pick) slot.appendChild(buildLinkAction(row.model, null, pick));
-    } else {
-      slot.append(...(wasState === "error"
-        ? buildErrorActions(row)
-        : [buildIdleButton(row.model)]));
-    }
+    slot.append(...(wasState === "error"
+      ? buildErrorActions(row)
+      : [buildIdleButton(row.model)]));
   }, 2500);
 }
 

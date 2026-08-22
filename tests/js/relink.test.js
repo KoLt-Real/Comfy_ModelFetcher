@@ -156,5 +156,38 @@ app.graph = { _nodes: [lA, lB], setDirtyCanvas() {} };
 r5 = relinkModel("two.safetensors", "F/two.safetensors");
 check("2 real loaders: counts 2", r5.found === 2 && r5.changed === 2, JSON.stringify(r5));
 
+// --- Case policy ------------------------------------------------------------
+// The exact spelling of the pick is what gets WRITTEN; a case-variant in the combo proves the
+// widget belongs to the right category but is never substituted. Two regressions guard this:
+// a fallback comparing folded-to-unfolded was dead for every mixed-case value (killing the
+// category filter), and substituting the variant wrote a different file on case-sensitive
+// filesystems while the tooltip promised the pick.
+
+// 1. Combo holds only the case-variant: known (category proven), but the PICK is written.
+const caseW = node("UNETLoader",
+  [widget("unet_name", "model.safetensors", ["Minimax/model.safetensors"])]);
+app.graph = { _nodes: [caseW], setDirtyCanvas() {} };
+let rc = relinkModel("model.safetensors", "MiniMax/model.safetensors");
+check("case-variant in combo: the picked spelling is written, not the variant",
+      caseW.widgets[0].value === "MiniMax/model.safetensors" && rc.changed === 1,
+      JSON.stringify({ v: caseW.widgets[0].value, rc }));
+check("and the write is judged linked on the next look",
+      (() => { const st = linkState("model.safetensors", "MiniMax/model.safetensors");
+               return st.found === 1 && st.linked === 1; })(),
+      JSON.stringify(linkState("model.safetensors", "MiniMax/model.safetensors")));
+
+// 2. Category filter must survive mixed-case values: a namesake widget of ANOTHER category
+//    (whose combo cannot know the value in any spelling) is dropped, not rewritten.
+const ckptW = node("CheckpointLoaderSimple",
+  [widget("ckpt_name", "dual.safetensors", ["minimax/dual.safetensors"])]);
+const vaeW = node("VAELoader",
+  [widget("vae_name", "dual.safetensors", ["dual.safetensors"])]);
+app.graph = { _nodes: [ckptW, vaeW], setDirtyCanvas() {} };
+rc = relinkModel("dual.safetensors", "MiniMax/dual.safetensors");
+check("mixed-case value: the namesake of another category is left alone",
+      rc.found === 1 && ckptW.widgets[0].value === "MiniMax/dual.safetensors"
+      && vaeW.widgets[0].value === "dual.safetensors",
+      JSON.stringify({ rc, ckpt: ckptW.widgets[0].value, vae: vaeW.widgets[0].value }));
+
 console.log(fails ? `\n${fails} failure(s)` : "\nAll cases OK");
 process.exit(fails ? 1 : 0);
