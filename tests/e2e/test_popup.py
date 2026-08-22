@@ -364,6 +364,58 @@ with sync_playwright() as pw:
     check("the copy chosen on the other disk is the one written",
           page.evaluate("() => window.app.graph._nodes[0].widgets[0].value") == "MiniMax/" + NAME)
 
+    # ---- 11b. Copies whose roots differ in tail, on a machine with two installs ----
+    # The screenshot case: both copies under 01_ComfyUI, whose two dirs differ at depth 2 —
+    # so labelled over the copies' roots alone, nothing said WHICH install they live in while
+    # the category also registers ComfyUI_MAIN's dirs. The labels must dig as deep as the
+    # "Save to" menu does, and the single-copy span plays by the same rule.
+    ONE = "single_copy_model.safetensors"
+    INSTALLS = copy.deepcopy(ANALYZE)
+    LOCS = [{"dir": d, "exists": True, "is_default": d.endswith("unet") and "01_" in d,
+             "subfolders": [""]}
+            for d in ["/opt/01_ComfyUI/models/unet", "/opt/01_ComfyUI/models/diffusion_models",
+                      "/opt/ComfyUI_MAIN/models/unet",
+                      "/opt/ComfyUI_MAIN/models/diffusion_models"]]
+    INSTALLS["categories"] = {"diffusion_models": {
+        "target_dir": "/opt/01_ComfyUI/models/unet", "known": True, "subfolders": [""],
+        "all_dirs": [l["dir"] for l in LOCS], "locations": LOCS}}
+    INSTALLS["models"] = [
+        {**INSTALLS["models"][0], "id": "diffusion_models/" + NAME, "filename": NAME,
+         "category": "diffusion_models", "remote_size": 20,
+         "local_matches": [
+            {"path": f"/opt/01_ComfyUI/models/unet/MiniMax/{NAME}", "size": 20,
+             "same_size": True, "value": f"MiniMax/{NAME}",
+             "root": "/opt/01_ComfyUI/models/unet"},
+            {"path": f"/opt/01_ComfyUI/models/diffusion_models/Minimax/{NAME}", "size": 20,
+             "same_size": True, "value": f"Minimax/{NAME}",
+             "root": "/opt/01_ComfyUI/models/diffusion_models"}],
+         "relink": {"value": f"MiniMax/{NAME}",
+                    "path": f"/opt/01_ComfyUI/models/unet/MiniMax/{NAME}",
+                    "root": "/opt/01_ComfyUI/models/unet"}},
+        {**INSTALLS["models"][0], "id": "diffusion_models/" + ONE, "filename": ONE,
+         "category": "diffusion_models", "remote_size": 30,
+         "local_matches": [
+            {"path": f"/opt/ComfyUI_MAIN/models/unet/sub/{ONE}", "size": 30,
+             "same_size": True, "value": f"sub/{ONE}",
+             "root": "/opt/ComfyUI_MAIN/models/unet"}],
+         "relink": {"value": f"sub/{ONE}", "path": f"/opt/ComfyUI_MAIN/models/unet/sub/{ONE}",
+                    "root": "/opt/ComfyUI_MAIN/models/unet"}}]
+    page.evaluate("(p) => { window.api.payload = p; }", INSTALLS)
+    page.evaluate("() => { window.app.extensionManager.workflow.activeWorkflow.key = 'workflow-I.json'; }")
+    page.evaluate("() => { window.app.graph = { _nodes: [], setDirtyCanvas() {} }; }")
+    page.evaluate("() => window.popup.openPopup()")
+    page.wait_for_selector(".cf-mf-row")
+
+    opts = row(page, "diffusion_models/" + NAME).locator(".cf-mf-copysel option").all_inner_texts()
+    check("tail-differing roots: each entry still names its install",
+          all("01_ComfyUI" in o for o in opts) and len(set(opts)) == 2, opts)
+    check("the menu labels match the Save to menu's spellings",
+          any(o.startswith("01_ComfyUI/models/unet · ") for o in opts), opts)
+    fixed = row(page, "diffusion_models/" + ONE).locator(".cf-mf-copyfixed").inner_text()
+    check("a single copy names its install under the same rule",
+          fixed.startswith("ComfyUI_MAIN/models/unet · ") and fixed.endswith(f"sub/{ONE}"),
+          fixed)
+
     # ---- 12. The relink line has a life of its own -------------------------
     # It now sits beside the download line instead of sharing its slot, so it must not inherit
     # the download's state machine — nor be erased by it.

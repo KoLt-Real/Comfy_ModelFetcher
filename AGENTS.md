@@ -162,3 +162,10 @@ run time — there is no duplicated copy to keep in sync.
   (`models/clip`), and a fixed slice renders them identically. It grows the label to the
   smallest depth that is unique, then elides the middle — and falls back to the full label if
   eliding would make two entries look alike again.
+- The "Link to" menu labels its roots over the category's **whole** location list (union'd
+  with the copies' own roots — a copy can sit under `output/<category>`), not just the roots
+  the copies happen to sit on: two subfolders of one install differ early (`models/unet`
+  against `models/diffusion_models`), which stopped the depth escalation before the segment
+  naming the install — on a machine with two installs, the menu could not say which one a
+  copy lived in. Same set as the "Save to" menu ⇒ the same folder reads the same in both.
+  `rootLabels()` in `popup.js` is where that set is built.

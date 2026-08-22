@@ -585,6 +585,25 @@ function buildLinkedBadge(m, count, unverified, pick) {
   return el;
 }
 
+// One label per root, keyed by root — or null when there is only one root in sight (nothing
+// to tell apart) or a copy carries no root (defensive: every entry must stay labellable).
+//
+// The naming set is the UNION of the category's locations and the copies' own roots, not
+// just the latter: two subfolders of one install differ early ("models/unet" against
+// "models/diffusion_models"), which used to stop locationLabels' depth escalation before
+// the segment naming the install — on a machine with two installs, the menu could not say
+// which one a copy lived in. Running over the category's full set drags that segment in
+// exactly when "Save to" shows it. The union (rather than the locations alone) covers a
+// copy under output/<category>: scanned, hence a valid root here, never a download location.
+// Deduplicated, so two copies of one root cannot trip locationLabels' "(1)"/"(2)" net.
+function rootLabels(locationDirs, roots) {
+  if (roots.some((r) => !r)) return null;
+  const naming = [...new Set([...(locationDirs || []), ...roots])];
+  if (naming.length < 2) return null;
+  const labels = locationLabels(naming);
+  return new Map(naming.map((r, i) => [r, labels[i]]));
+}
+
 // Menu of the copies already on disk. Shown only when there is a real choice to make.
 // Without it Relink silently took the first same-size copy, while the destination menu right
 // next to it — which only ever drove downloads — read as though it were the one deciding.
@@ -595,18 +614,13 @@ function buildLinkedBadge(m, count, unverified, pick) {
 // entries 60 characters long, identical but for the case of one folder ("Minimax" vs
 // "MiniMax"), and no way to tell which disk each one sat on.
 //
-// The root is named as soon as the copies span more than one, because the subfolder alone then
-// says nothing about which tree it belongs to. Labelling is shared with the "Save to" menu, so
-// two roots ending the same way stay distinguishable.
-export function copyLabels(cands) {
-  const roots = [...new Set(cands.map((c) => c.root))];
-  // locationLabels() needs distinct paths: mapping through the unique roots also keeps two
-  // copies of the same root from being labelled "(1)" and "(2)" by its fallback.
-  let named = null;
-  if (roots.length > 1 && cands.every((c) => c.root)) {
-    const labels = locationLabels(roots);
-    named = new Map(roots.map((r, i) => [r, labels[i]]));
-  }
+// The root is named as soon as the category registers more than one location — exactly when
+// the "Save to" menu exists — even if every copy sits on the same root: the whole point is
+// to say WHICH install a copy lives in, and that question exists as soon as there are two.
+// Labelling runs over the same set as the "Save to" menu (see rootLabels), so the same
+// folder reads the same in both menus.
+export function copyLabels(cands, locationDirs = null) {
+  const named = rootLabels(locationDirs, cands.map((c) => c.root));
   const distinct = (arr) => new Set(arr).size === arr.length;
   const compose = (folderOf) => cands.map((c) => {
     const cut = c.value.lastIndexOf("/");
@@ -647,12 +661,16 @@ function elideFolder(folder) {
 
 function buildCopyControl(m, pick) {
   const cands = relinkCandidates(m);
+  const locationDirs = state.categories[m.category]?.locations?.map((l) => l.dir) || [];
   // A single copy is not a choice: showing the path plainly says more than a one-entry menu,
-  // and it was until now only reachable through the button's tooltip.
+  // and it was until now only reachable through the button's tooltip. The root is still
+  // named under the same rule as the menu's entries: one copy is no less ambiguous about
+  // WHICH install it sits in than two.
   if (cands.length < 2) {
     const fixed = document.createElement("span");
     fixed.className = "cf-mf-copyfixed";
-    fixed.textContent = pick.value;
+    const named = rootLabels(locationDirs, [pick.root]);
+    fixed.textContent = named ? `${named.get(pick.root)} · ${pick.value}` : pick.value;
     fixed.title = pick.path;
     return fixed;
   }
@@ -660,7 +678,7 @@ function buildCopyControl(m, pick) {
   const sel = document.createElement("select");
   sel.className = "cf-mf-copysel";
   sel.title = "Which copy already on disk the loader node(s) should point at.";
-  const labels = copyLabels(cands);
+  const labels = copyLabels(cands, locationDirs);
   // Keyed by index rather than by path: shorter, and nothing here depends on the value.
   cands.forEach((c, i) => {
     const opt = new Option(labels[i], String(i));

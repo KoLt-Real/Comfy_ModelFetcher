@@ -65,10 +65,11 @@ with sync_playwright() as pw:
     # Same requirement, other menu: every entry repeats the row's filename, so what has to be
     # readable is WHERE each copy lives — which tree, which subfolder.
     NAME = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
-    def copies(pg, rows):
-        return pg.evaluate("(c) => window.popup.copyLabels(c)",
-                           [{"root": r, "value": v, "path": r + "/" + v,
-                             "size": 1, "same_size": True} for r, v in rows])
+    def copies(pg, rows, dirs=None):
+        return pg.evaluate("(c) => window.popup.copyLabels(c.cands, c.dirs)",
+                           {"cands": [{"root": r, "value": v, "path": r + "/" + v,
+                                       "size": 1, "same_size": True} for r, v in rows],
+                            "dirs": dirs})
 
     out = copies(pg, [("/o/models/unet", "Flux/x.safetensors"),
                       ("/o/models/unet", "Archive/x.safetensors")])
@@ -89,6 +90,31 @@ with sync_playwright() as pw:
     ck("two disks: the differing segment is shown",
        "01_ComfyUI" in out[0] and "01_ComfyUI" not in out[1], out)
     print("        two disks:", out)
+
+    # The category's OTHER locations count too: the two roots below differ at depth 2, so on
+    # their own the labels stop at "models/unet"/"models/diffusion_models" — mute about which
+    # of the two INSTALLS the copies live in. With the category's full location list (the same
+    # set the "Save to" menu labels), the escalation digs until the install's name shows.
+    installs = ["/opt/01_ComfyUI/models/unet", "/opt/01_ComfyUI/models/diffusion_models",
+                "/opt/ComfyUI_MAIN/models/unet", "/opt/ComfyUI_MAIN/models/diffusion_models"]
+    out = copies(pg, [("/opt/01_ComfyUI/models/unet", f"MiniMax/{NAME}"),
+                      ("/opt/01_ComfyUI/models/diffusion_models", f"Minimax/{NAME}")],
+                 installs)
+    ck("two installs: each entry names its install",
+       all("01_ComfyUI" in o for o in out) and len(set(out)) == 2, out)
+    print("        two installs:", out)
+
+    # Copies all under ONE root, but the category spans two installs: the install is still
+    # named — one root is no less ambiguous about WHERE it is than two.
+    out = copies(pg, [("/opt/01_ComfyUI/models/unet", "Flux/x.st"),
+                      ("/opt/01_ComfyUI/models/unet", "Archive/x.st")], installs)
+    ck("one root, several installs: the install is still named",
+       all(o.startswith("01_ComfyUI/models/unet · ") for o in out), out)
+
+    # Single-location category: the subfolder alone still suffices (no prefix noise).
+    out = copies(pg, [("/o/models/unet", "Flux/x.st"), ("/o/models/unet", "Archive/x.st")],
+                 ["/o/models/unet"])
+    ck("single location: no prefix", out == ["Flux", "Archive"], out)
 
     # Two copies sharing a root, a third elsewhere: the shared root must not be labelled
     # "(1)" and "(2)" by the uniqueness fallback.

@@ -72,15 +72,17 @@ relative path under two roots count once, since ComfyUI would load the same file
 With a single copy, **Link to** simply shows its path.
 
 Each entry says **where** the copy lives rather than repeating the filename: the subfolder, and
-the root as soon as the copies span more than one — `models/unet · Minimax` next to
-`models/diffusion_models · MiniMax`. Two roots ending the same way are dug into until they read
-differently, and the full path stays one hover away.
+the root as soon as the category registers more than one location — `01_ComfyUI/models/unet ·
+Minimax` next to `01_ComfyUI/…/diffusion_models · MiniMax`. Roots are labelled over the same
+set as the **Save to** menu, so the same folder reads the same in both menus — on a machine
+with two installs, every entry says which one it lives in, even when the copies' own roots
+would already differ. The full path stays one hover away.
 
-![The Link to menu open on a likely duplicate: the same file exists twice, once under
-models/diffusion_models and once under models/unet, and each entry is named by its root and its
-subfolder. Above it, a row already relinked shows a green Linked pill; below, a missing model
-has no Link to line at all — only Save to and Download. The footer reminds you to save the
-workflow](docs/ui-relink.png)
+![The Link to menu open on a likely duplicate: the same file exists twice under the
+ComfyUI_MAIN install, once in models/unet and once in models/diffusion_models, and each entry
+names its install, its root and its subfolder. Above it, a row already relinked shows a green
+Linked pill; below, a missing model has no Link to line at all — only Save to and Download.
+The footer reminds you to save the workflow](docs/ui-relink.png)
 
 ### Downloads
 - Sequential queue with a single worker, **live progress** (bytes, total, speed) pushed over
