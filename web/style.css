@@ -293,8 +293,12 @@
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  padding: 9px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 11px 12px;
+  /* Stronger than the OR hairline INSIDE a row (0.07 white): two stacked duplicates each
+     carry Link to/OR/Save to, and with the boundary fainter than the hairlines the eye
+     paired each Save to with the next row's Link to. Same token as the card's own borders:
+     structural lines share one colour, intra-row hairlines stay faint. */
+  border-top: 1px solid var(--border-color, #2e2e38);
 }
 .cf-mf-row:first-child { border-top: none; }
 .cf-mf-row.is-done { background: rgba(74, 222, 128, 0.06); }
@@ -364,7 +368,8 @@
   content: "";
   flex: 1;
   height: 1px;
-  background: rgba(255, 255, 255, 0.10);
+  /* Kept BELOW the row boundary's strength — see .cf-mf-row. */
+  background: rgba(255, 255, 255, 0.07);
 }
 .cf-mf-opctl { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .cf-mf-action-link { display: flex; align-items: center; justify-content: flex-end; }
