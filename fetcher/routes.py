@@ -69,6 +69,10 @@ async def analyze(request):
         return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
 
     notes = body.get("notes") or []
+    # Notes come from the client: a shape parse_notes cannot read must answer 400, like any
+    # other malformed input — not leak an AttributeError as a 500.
+    if not isinstance(notes, list) or not all(isinstance(n, dict) for n in notes):
+        return web.json_response({"ok": False, "error": "invalid notes"}, status=400)
     refs = parse_notes(notes)
 
     # Category resolution (once per name).
@@ -144,7 +148,10 @@ async def count(request):
     except Exception:
         return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
 
-    refs = parse_notes(body.get("notes") or [])
+    notes = body.get("notes") or []
+    if not isinstance(notes, list) or not all(isinstance(n, dict) for n in notes):
+        return web.json_response({"ok": False, "error": "invalid notes"}, status=400)
+    refs = parse_notes(notes)
     cat_cache: dict[str | None, scanner.CategoryInfo] = {}
     for r in refs:
         if r.category not in cat_cache:

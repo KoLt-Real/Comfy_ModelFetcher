@@ -126,6 +126,17 @@ async def main():
     ck("download to the output folder: refused",
        [(r["id"], r["reason"]) for r in d["rejected"]] == [("out", "destination path refused")], d)
 
+    # Malformed notes (the shape, not the JSON): 400, never an unhandled 500. Seen live with
+    # a hand-written payload sending bare strings where the frontend sends {node_id, title,
+    # text} dicts — parse_notes would raise AttributeError deep in the request.
+    for label, notes in (("a bare string in the list", ["just text"]),
+                         ("notes not even a list", "just text")):
+        for name, handler in (("analyze", analyze), ("count", count)):
+            r = await handler(FakeReq({"notes": notes}))
+            ck(f"{name}: {label} -> 400",
+               r.status == 400 and body_of(r)["error"] == "invalid notes",
+               (r.status, body_of(r)))
+
     # analysis with no URL at all (the _no_sizes path)
     empty = body_of(await analyze(FakeReq({"notes": [{"node_id": 2, "title": "", "text": "pas de lien"}]})))
     ck("note with no link -> 0 models, no error", empty["ok"] and empty["models"] == [], empty)
