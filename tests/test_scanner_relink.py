@@ -158,5 +158,39 @@ print("\n--- order independent of the filesystem ---")
 print(("OK  " if ok else "FAIL") + f"  copies sorted {got!r}  (disk order was {walked!r})")
 res.append(ok)
 
+# --- the automatic pick prefers the preferred install ------------------------
+# folder_paths order IS the preference order: `is_default: true` in extra_model_paths.yaml
+# puts the user's install at the head of a category's dirs. Among same-size copies the pick
+# must follow that order, not the alphabet: here the alphabetically-first copy ("AAA/…")
+# sits on the SECOND root, and the winner must be the first root's copy all the same.
+pref = os.path.join(tmp, "pref")
+P0, P1 = os.path.join(pref, "preferred"), os.path.join(pref, "other")
+mk(os.path.join(P1, "AAA", "pref.safetensors"), 100)
+mk(os.path.join(P0, "zzz", "pref.safetensors"), 100)
+mk(os.path.join(P1, "kkk", "pref.safetensors"), 42)
+cat_pref = CategoryInfo(name="checkpoints", known=True, target_dir=P0, all_dirs=[P0, P1])
+r = classify(ModelRef(filename="pref.safetensors", url="u", category="checkpoints"),
+             cat_pref, build_disk_index([P0, P1]), 100)
+print("\n--- the preferred install wins the automatic pick ---")
+for label, got, want in (
+    ("same size on the first root wins", r["relink"]["root"], P0),
+    ("… with its own value", r["relink"]["value"], "zzz/pref.safetensors"),
+    # The menu itself stays alphabetical: preference decides the pick, not the reading order.
+    ("the menu order stays alphabetical",
+     [c["value"] for c in r["local_matches"]],
+     ["AAA/pref.safetensors", "kkk/pref.safetensors", "zzz/pref.safetensors"]),
+):
+    ok = got == want
+    print(("OK  " if ok else "FAIL") + f"  {label:38} {got!r}"
+          + ("" if ok else f"   EXPECTED {want!r}"))
+    res.append(ok)
+
+# No same-size copy anywhere (unknown remote size): the preference still applies to the pool.
+r = classify(ModelRef(filename="pref.safetensors", url="u", category="checkpoints"),
+             cat_pref, build_disk_index([P0, P1]), None)
+ok = r["relink"]["root"] == P0
+print(("OK  " if ok else "FAIL") + f"  unknown size: first root still wins {r['relink']['value']!r}")
+res.append(ok)
+
 print(f"\n{sum(res)}/{len(res)} cases OK")
 sys.exit(0 if all(res) else 1)

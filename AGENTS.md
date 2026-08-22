@@ -60,8 +60,11 @@ tests/               see below — run them
    copy the row points at follows the same rule: `relinkPick()` prefers the user's choice, then
    whichever copy the graph already uses, and only then the server's automatic pick — a popup
    reopened on a relinked workflow must not claim the row is unlinked because it defaulted
-   elsewhere. `relink_target()` stays the default, and the invariant test checks it is always
-   one of the copies the menu offers.
+   elsewhere. `relink_target()` stays the default — among same-size copies it takes the one on
+   the earliest of `cat.all_dirs`, i.e. `folder_paths` order, which `is_default: true` in
+   `extra_model_paths.yaml` puts the user's preferred install at the head of; alphabetical
+   order only breaks ties within a root — and the invariant test checks it is always one of
+   the copies the menu offers.
 8. **Popup preferences are keyed per workflow.** Several workflows are open at once; state must
    not leak between tabs. See `currentWorkflowKey()` and its epoch fallback.
 9. **Model ids must be unique.** `parse_notes()` disambiguates two different URLs that resolve

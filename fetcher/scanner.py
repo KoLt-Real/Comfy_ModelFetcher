@@ -199,18 +199,26 @@ def _at_dir_root(match: dict) -> bool:
     return "/" not in match["value"]
 
 
-def relink_target(matches: list[dict]) -> dict | None:
+def relink_target(matches: list[dict], cat: CategoryInfo) -> dict | None:
     """Value to give the loader node's widget so it points at the copy already on disk.
 
     ``matches`` must be ``classify``'s IN-CATEGORY list: only those entries carry the
     ``value``/``root`` this reads (``other_category_matches`` entries do not).
+
+    Among same-size copies, the one on the earliest of ``cat.all_dirs`` wins — that order
+    is ``folder_paths`` order, which ``is_default: true`` in ``extra_model_paths.yaml``
+    puts the user's preferred install at the head of. Ties (several copies on the same
+    root) keep ``classify``'s alphabetical order, so the pick stays deterministic.
 
     ComfyUI lists a category's models as paths relative to each of its folders
     (``Flux/model.safetensors``); templates, on the other hand, point at the root. A file
     already at the root of one of those folders is reachable by its bare name → nothing to
     fix, ``None`` is returned.
     """
-    best = next((m for m in matches if m["same_size"]), matches[0] if matches else None)
+    pool = [m for m in matches if m["same_size"]] or matches
+    # ``root`` is the verbatim string classify copied out of ``cat.all_dirs``, so index()
+    # is an exact lookup; min() is stable, so equal ranks keep the list's own order.
+    best = min(pool, key=lambda m: cat.all_dirs.index(m["root"])) if pool else None
     if best is None or _at_dir_root(best):
         return None
     return {"value": best["value"], "path": best["path"], "root": best["root"]}
@@ -280,7 +288,7 @@ def classify(ref: ModelRef, cat: CategoryInfo,
         "other_category_matches": matches_other,
         # Only offered for a same-size duplicate: on a different size the local file is
         # probably another version, and pointing at it would be wrong.
-        "relink": relink_target(matches_in_cat) if status == ST_DUP_SAME else None,
+        "relink": relink_target(matches_in_cat, cat) if status == ST_DUP_SAME else None,
     }
 
 

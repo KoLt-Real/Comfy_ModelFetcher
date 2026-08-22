@@ -64,8 +64,8 @@ Each row carries its two decisions on separate lines — **Link to** … *Relink
 
 **Several copies on disk?** When the same filename sits in more than one subfolder, **Link to**
 becomes a menu and Relink points where you tell it to. It opens on the copy the workflow
-already uses, falling back to the first same-size one in alphabetical order, and only ever
-lists real choices:
+already uses, falling back to the first same-size one — preferred install first (see below),
+alphabetical within it — and only ever lists real choices:
 copies whose size contradicts the source are left out — those are another version of the model,
 which is also why a size mismatch never gets a Relink button at all — and copies sharing a
 relative path under two roots count once, since ComfyUI would load the same file either way.
@@ -110,6 +110,26 @@ The footer reminds you to save the workflow](docs/ui-relink.png)
   Empty = category root.
 - The server only ever accepts a folder actually registered for that category, and confines
   the final path inside it.
+
+### Preferred install
+
+With several model roots registered (main folder + `extra_model_paths.yaml`), ComfyUI itself
+lets you mark one stanza as the preferred one — no plugin-specific setting to learn:
+
+```yaml
+comfyui_main:
+  base_path: D:/ComfyUI_MAIN/
+  is_default: true          # ← this install's folders go first
+  checkpoints: models/checkpoints/
+  diffusion_models: |
+       models/unet/
+       models/diffusion_models/
+```
+
+`is_default: true` puts that install's folders at the head of every category's list (see
+ComfyUI's own `extra_model_paths.yaml.example`), and the fetcher follows: its folders become
+the **Save to** default — marked `(main)` — and **Relink**'s automatic pick prefers a copy
+living there when several same-size copies exist. Either can still be overridden per row.
 
 ### Gated models (HuggingFace token)
 - When a model returns 401, the popup explains the whole path in plain language: free account →
