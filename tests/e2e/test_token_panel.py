@@ -21,7 +21,8 @@ def ck(n, c, e=""):
     if not c: fails.append(n)
 
 with sync_playwright() as pw:
-    b = pw.chromium.launch(); pg = b.new_page()
+    b = pw.chromium.launch()
+    pg = b.new_page()
     pg.on("pageerror", lambda e: ck("JS error: " + str(e), False))
     pg.goto(BASE + "/index.html")
     pg.wait_for_function("window.ready === true")

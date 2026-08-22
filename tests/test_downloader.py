@@ -1,8 +1,11 @@
 """C4: the dying-worker / enqueue race, and cancelling after a re-enqueue."""
 import os, sys, types, queue, threading, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-fp = types.ModuleType("folder_paths"); fp.models_dir="/m"; fp.folder_names_and_paths={}
-fp.get_user_directory=lambda:"/u"; fp.map_legacy=lambda n:n
+fp = types.ModuleType("folder_paths")
+fp.models_dir="/m"
+fp.folder_names_and_paths={}
+fp.get_user_directory=lambda:"/u"
+fp.map_legacy=lambda n:n
 sys.modules["folder_paths"] = fp
 
 import fetcher.downloader as dl

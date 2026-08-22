@@ -4,8 +4,11 @@ Serves a real local HTTP server — no external network access.
 """
 import os, sys, types, http.server, socketserver, threading, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-fp = types.ModuleType("folder_paths"); fp.models_dir="/m"; fp.folder_names_and_paths={}
-fp.get_user_directory=lambda:"/u"; fp.map_legacy=lambda n:n
+fp = types.ModuleType("folder_paths")
+fp.models_dir="/m"
+fp.folder_names_and_paths={}
+fp.get_user_directory=lambda:"/u"
+fp.map_legacy=lambda n:n
 sys.modules["folder_paths"] = fp
 
 import fetcher.downloader as dl
@@ -32,7 +35,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if rng and Handler.honour_range:
             start = int(rng.split("=")[1].split("-")[0])
             if start >= len(BODY):
-                self.send_response(416); self.end_headers(); return
+                self.send_response(416)
+                self.end_headers()
+                return
             self.send_response(206)
             self.send_header("Content-Range", f"bytes {start}-{len(BODY)-1}/{len(BODY)}")
         else:

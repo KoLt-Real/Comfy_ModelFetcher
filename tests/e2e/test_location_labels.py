@@ -19,7 +19,8 @@ def labels(pg, dirs):
     return pg.evaluate("(d) => window.popup.locationLabels(d)", dirs)
 
 with sync_playwright() as pw:
-    b = pw.chromium.launch(); pg = b.new_page(viewport={"width": 1100, "height": 700})
+    b = pw.chromium.launch()
+    pg = b.new_page(viewport={"width": 1100, "height": 700})
     pg.on("pageerror", lambda e: ck("JS error: " + str(e), False))
     pg.goto(BASE + "/index.html")
     pg.wait_for_function("window.ready === true")

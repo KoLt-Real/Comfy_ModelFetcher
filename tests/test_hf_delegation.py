@@ -5,8 +5,11 @@ is there, fallback when it is missing.
 """
 import os, sys, types
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-fp = types.ModuleType("folder_paths"); fp.models_dir="/m"; fp.folder_names_and_paths={}
-fp.get_user_directory=lambda:"/u"; fp.map_legacy=lambda n:n
+fp = types.ModuleType("folder_paths")
+fp.models_dir="/m"
+fp.folder_names_and_paths={}
+fp.get_user_directory=lambda:"/u"
+fp.map_legacy=lambda n:n
 sys.modules["folder_paths"] = fp
 
 from fetcher import hf_token, remote
@@ -64,7 +67,8 @@ ck("HF URL -> size through huggingface_hub", remote.remote_size(HF) == (4096, No
 ck("the library really was called", len(log["meta_calls"]) == 1, log)
 
 os.environ["HF_TOKEN"] = "not-a-real-token"
-remote.invalidate(); log["meta_calls"].clear()
+remote.invalidate()
+log["meta_calls"].clear()
 remote.remote_size(HF)
 ck("the token is passed to the library for an HF URL",
    log["meta_calls"][0]["token"] == "not-a-real-token", log["meta_calls"])
@@ -97,7 +101,8 @@ ck("no token is sent to a non-HF host", hf_token.auth_headers(CIVITAI) == {})
 
 # ---------- fallback when the library is missing ----------------------------
 no_hub()
-remote.invalidate(); calls["n"] = 0
+remote.invalidate()
+calls["n"] = 0
 ck("without huggingface_hub, an HF URL falls back to the hand-rolled HEAD",
    remote.remote_size(HF) == (7, None) and calls["n"] == 1, calls)
 
@@ -121,7 +126,8 @@ class FakeResp:
     status_code = 200
     def json(self): return {"name": "mirror-user"}
 def fake_get(url, **kw):
-    seen["url"] = url; seen["headers"] = kw.get("headers")
+    seen["url"] = url
+    seen["headers"] = kw.get("headers")
     return FakeResp()
 hf_token.requests = types.SimpleNamespace(get=fake_get, RequestException=Exception)
 os.environ["HF_ENDPOINT"] = "https://hf.my-company.local"

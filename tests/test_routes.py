@@ -31,10 +31,14 @@ sys.modules["folder_paths"] = fp
 class _Routes:
     def __init__(self): self.handlers = {}
     def post(self, path):
-        def deco(fn): self.handlers[("POST", path)] = fn; return fn
+        def deco(fn):
+            self.handlers[("POST", path)] = fn
+            return fn
         return deco
     def get(self, path):
-        def deco(fn): self.handlers[("GET", path)] = fn; return fn
+        def deco(fn):
+            self.handlers[("GET", path)] = fn
+            return fn
         return deco
 
 srv = types.ModuleType("server")
@@ -54,7 +58,9 @@ def ck(n, c, e=""):
     if not c: fails.append(n)
 
 class FakeReq:
-    def __init__(self, body): self._b = body; self.query = {}
+    def __init__(self, body):
+        self._b = body
+        self.query = {}
     async def json(self): return self._b
 
 def body_of(resp):

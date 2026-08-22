@@ -1,13 +1,17 @@
 """Remote size cache: an error is never final."""
 import os, sys, types, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-fp = types.ModuleType("folder_paths"); fp.models_dir="/m"; fp.folder_names_and_paths={}
-fp.get_user_directory=lambda:"/u"; fp.map_legacy=lambda n:n
+fp = types.ModuleType("folder_paths")
+fp.models_dir="/m"
+fp.folder_names_and_paths={}
+fp.get_user_directory=lambda:"/u"
+fp.map_legacy=lambda n:n
 sys.modules["folder_paths"] = fp
 
 fails=[]
 def ck(n,c,e=""):
-    print(("OK   " if c else "FAIL ")+n+("" if c else "  -> "+str(e)));  fails.append(n) if not c else None
+    print(("OK   " if c else "FAIL ")+n+("" if c else "  -> "+str(e)))
+    if not c: fails.append(n)
 
 from fetcher import remote
 

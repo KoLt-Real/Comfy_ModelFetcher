@@ -158,6 +158,15 @@ re-dock. Position and docked state persist across sessions.
 
 ## Install
 
+**Via ComfyUI Manager** — search for *Model Fetcher* in the Manager's custom-node list, or
+install it from the [Comfy Registry](https://registry.comfy.org/nodes/comfyui-modelfetcher):
+
+```bash
+comfy node install comfyui-modelfetcher
+```
+
+**Manually:**
+
 ```bash
 cd ComfyUI/custom_nodes
 git clone https://github.com/KoLt-Real/ComfyUI-ModelFetcher.git
