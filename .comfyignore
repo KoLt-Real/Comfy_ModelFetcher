@@ -1,0 +1,5 @@
+# Kept out of the package the Registry serves — the installed copy only needs the
+# runtime files. The repository keeps all of it.
+tests/
+docs/
+.github/

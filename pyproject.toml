@@ -6,12 +6,12 @@ license = { file = "LICENSE" }
 requires-python = ">=3.10"
 # Nothing to install: only `requests` and `aiohttp`, both already required by ComfyUI.
 dependencies = []
+classifiers = ["Operating System :: OS Independent"]
 
 [project.urls]
 Repository = "https://github.com/KoLt-Real/ComfyUI-ModelFetcher"
 
 [tool.comfy]
 DisplayName = "Model Fetcher"
-# PublisherId comes from the account created on https://registry.comfy.org —
-# fill it in before `comfy node publish`, it cannot be guessed.
-# PublisherId = ""
+PublisherId = "kolt-real"
+Icon = "https://raw.githubusercontent.com/KoLt-Real/ComfyUI-ModelFetcher/main/docs/icon.png"
